@@ -1,0 +1,195 @@
+@authHost = http://localhost:5000
+@empHost = http://localhost:5001
+
+### 0a. Health
+GET {{empHost}}/health
+
+### 0b. Health with no auth — still 200, /health is unprotected.
+POST {{empHost}}/search
+Content-Type: application/json
+
+{}
+
+### ===========================================
+###            Get a token
+### ===========================================
+
+### 1. Register an employee.
+# @name registerEmp
+POST {{authHost}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "surname": "Doe",
+  "email": "john@gmail.com",
+  "password": "aA123456"
+}
+
+### 2. Login as the employee (saved as {{empToken}}).
+# @name loginEmp
+POST {{authHost}}/login
+Content-Type: application/json
+
+{
+  "email": "john@gmail.com",
+  "password": "aA123456"
+}
+
+### ===========================================
+###              /search
+### ===========================================
+
+### 3. /search with no auth → 401
+POST {{empHost}}/search
+Content-Type: application/json
+
+{}
+
+### 4. /search with empty body → 200, empty assets.
+POST {{empHost}}/search
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{}
+
+### 5. /search with name filter (no assets match in a fresh DB).
+POST {{empHost}}/search
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond"
+}
+
+### 6. /search with info_filters dot-notation (the key test for Step 3).
+POST {{empHost}}/search
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "info_filters": [
+    { "field": "issuer.country", "operator": "eq", "value": "US" }
+  ]
+}
+
+### ===========================================
+###           /create_buy_order
+### ===========================================
+
+### 7. /create_buy_order with no auth → 401
+POST {{empHost}}/create_buy_order
+Content-Type: application/json
+
+{
+  "name": "Bond A",
+  "categories": ["finance"],
+  "buying_price": 100,
+  "info": {}
+}
+
+### 8. /create_buy_order with empty body → 400 Field name is missing.
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{}
+
+### 9. /create_buy_order with name only → 400 Field categories is missing.
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond A"
+}
+
+### 10. /create_buy_order with empty categories → 400 Categories list is empty.
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond A",
+  "categories": []
+}
+
+### 11. /create_buy_order with buying_price = 0 → 400 Invalid buying price.
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond A",
+  "categories": ["finance"],
+  "buying_price": 0,
+  "info": {}
+}
+
+### 12. /create_buy_order with bool buying_price → 400 Invalid buying price.
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond A",
+  "categories": ["finance"],
+  "buying_price": true,
+  "info": {}
+}
+
+### 13. /create_buy_order happy path → 200.
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond A",
+  "categories": ["finance", "fixed"],
+  "buying_price": 100,
+  "info": { "issuer": { "country": "US" } }
+}
+
+### ===========================================
+###           /create_sell_order
+### ===========================================
+
+### 14. /create_sell_order with no auth → 401
+POST {{empHost}}/create_sell_order
+Content-Type: application/json
+
+{ "id": "000000000000000000000000", "selling_price": 100 }
+
+### 15. /create_sell_order with no id → 400 Field id is missing.
+POST {{empHost}}/create_sell_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{ "selling_price": 100 }
+
+### 16. /create_sell_order with malformed id → 400 Invalid id.
+POST {{empHost}}/create_sell_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{ "id": "not-an-objectid", "selling_price": 100 }
+
+### 17. /create_sell_order with valid ObjectId but no such asset → 400 Invalid id.
+POST {{empHost}}/create_sell_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{ "id": "000000000000000000000000", "selling_price": 100 }
+
+### 18. /create_sell_order with selling_price = 0 → 400 Invalid selling price.
+POST {{empHost}}/create_sell_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{ "id": "000000000000000000000000", "selling_price": 0 }
+
+### 19. /create_sell_order happy path requires a real asset.
+# (You can only exercise this after the director's /decision finalizes a buy
+#  order, which inserts a document into Mongo. So request 19 depends on
+#  running request 13, then running the director's /decision. The e2e test
+#  covers this end-to-end.)

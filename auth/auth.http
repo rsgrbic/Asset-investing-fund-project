@@ -1,0 +1,172 @@
+@host = http://localhost:5000
+
+### 0. Health check
+GET {{host}}/health
+
+### ===========================================
+###                /register
+### ===========================================
+
+### 1. Register a new employee (success → 200, empty body)
+# @name registerJohn
+POST {{host}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "surname": "Doe",
+  "email": "john@gmail.com",
+  "password": "aA123456"
+}
+
+### 2. Register again with the same email → 400 Email already exists.
+POST {{host}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "surname": "Doe",
+  "email": "john@gmail.com",
+  "password": "aA123456"
+}
+
+### 3. Register with a malformed email → 400 Invalid email.
+POST {{host}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "surname": "Doe",
+  "email": "not-an-email",
+  "password": "aA123456"
+}
+
+### 4. Register with a short password → 400 Invalid password.
+POST {{host}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "surname": "Doe",
+  "email": "ok@gmail.com",
+  "password": "short"
+}
+
+### 5. Register with empty body → 400 Field forename is missing.
+POST {{host}}/register
+Content-Type: application/json
+
+{}
+
+### 6. Register with forename null → 400 Field forename is missing.
+POST {{host}}/register
+Content-Type: application/json
+
+{
+  "forename": null,
+  "surname": "Doe",
+  "email": "ok@gmail.com",
+  "password": "aA123456"
+}
+
+### 7. Register with forename present but surname missing → 400 Field surname is missing.
+POST {{host}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "email": "ok@gmail.com",
+  "password": "aA123456"
+}
+
+### ===========================================
+###                 /login
+### ===========================================
+
+### 8. Login as John → 200, returns accessToken (saved as {{token}}).
+# @name loginJohn
+POST {{host}}/login
+Content-Type: application/json
+
+{
+  "email": "john@gmail.com",
+  "password": "aA123456"
+}
+
+### 9. Login as the seeded director (must work even before any /register call).
+# @name loginDirector
+POST {{host}}/login
+Content-Type: application/json
+
+{
+  "email": "onlymoney@gmail.com",
+  "password": "evenmoremoney"
+}
+
+### 10. Login with wrong password → 400 Invalid credentials.
+POST {{host}}/login
+Content-Type: application/json
+
+{
+  "email": "john@gmail.com",
+  "password": "wrongPassword"
+}
+
+### 11. Login with unknown email → 400 Invalid credentials.
+POST {{host}}/login
+Content-Type: application/json
+
+{
+  "email": "nobody@gmail.com",
+  "password": "aA123456"
+}
+
+### 12. Login with malformed email → 400 Invalid email.
+POST {{host}}/login
+Content-Type: application/json
+
+{
+  "email": "bad",
+  "password": "aA123456"
+}
+
+### 13. Login with empty body → 400 Field email is missing.
+POST {{host}}/login
+Content-Type: application/json
+
+{}
+
+### ===========================================
+###                /delete
+### ===========================================
+
+### 14. Delete with no Authorization header → 401 Missing Authorization Header.
+POST {{host}}/delete
+
+### 15. Delete with garbage Authorization header → 401 Missing Authorization Header.
+POST {{host}}/delete
+Authorization: Bearer not-a-real-token
+
+### 16. Delete John's account (uses the token from request 8).
+POST {{host}}/delete
+Authorization: Bearer {{loginJohn.response.body.accessToken}}
+
+### 17. Delete the seeded director's account.
+POST {{host}}/delete
+Authorization: Bearer {{loginDirector.response.body.accessToken}}
+
+### 18. Login as John again — he should be gone now → 400 Invalid credentials.
+POST {{host}}/login
+Content-Type: application/json
+
+{
+  "email": "john@gmail.com",
+  "password": "aA123456"
+}
+
+### 19. Delete with a token whose sub is not in the DB → 400 Unknown user.
+# (You'd need a token for a user you just deleted, e.g. the one from request 16,
+# but that token is now stale. To exercise this case, delete John first, then
+# try the same request 16 again — the JWT still verifies, but the lookup fails.)
+POST {{host}}/delete
+Authorization: Bearer {{loginJohn.response.body.accessToken}}
