@@ -45,25 +45,23 @@ def create_app():
         
         from flask_jwt_extended import get_jwt
         claims = get_jwt()
-        roles = claims.get("roles",[])
-        if isinstance (roles,str):
-            roles=[roles]
+        role = claims.get("role", None)
         employee_role= os.environ.get("EMPLOYEE_ROLE", "employee")
-        if employee_role not in roles:
+        if role is not None and not employee_role == role:
             return jsonify({"msg": "Missing Authorization Header"}), 401
         return None
 
     app = Flask(__name__)
-    app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY")
+    app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY","HARDCODED")
     JWTManager(app)
 
 
     # Fallback to local mongo
-    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    mongo_url = os.environ.get("MONGO_URL", "mongodb://mongo:27017")
     mongo_client = _make_mongo_client(mongo_url)
     assets_collection = mongo_client["investment_fund"]["assets"]
     
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
     redis_client = Redis.from_url(redis_url, decode_responses=True)
     PENDING_ORDER_PREFIX = "pending_order:"
 
@@ -77,7 +75,7 @@ def create_app():
         
         category=_get_str(params,"category")
         if category is not None:
-            query["category"]=category
+            query["categories"]=category
 
         buying_date= params.get("buying_date")
         if _is_iso8601(buying_date):
@@ -208,15 +206,23 @@ def create_app():
 
         if "categories" not in data or not isinstance(data["categories"], list):
             return jsonify({"message": "Field categories is missing."}), 400
+        
+        
+        buying_price = data.get("buying_price")
+        if buying_price is None:
+            return jsonify({"message": "Field buying_price is missing."}), 400
+            
         categories = data["categories"]
         if len(categories) == 0:
             return jsonify({"message": "Categories list is empty."}), 400
 
-        buying_price = data.get("buying_price")
         if not isinstance(buying_price, (int, float)) or isinstance(buying_price, bool) or buying_price <= 0:
             return jsonify({"message": "Invalid buying price."}), 400
 
         info = data.get("info")
+        if info is None:
+            return jsonify({"message": "Field info is missing."}), 400
+            
         if not isinstance(info, dict):
             info = {}
 
@@ -244,6 +250,10 @@ def create_app():
         if asset_id is None:
             return jsonify({"message": "Field id is missing."}), 400
 
+        selling_price = data.get("selling_price")
+        if selling_price is None:
+            return jsonify({"message": "Field selling_price is missing."}), 400
+            
         try:
             oid = ObjectId(asset_id)
         except (InvalidId, TypeError):
@@ -252,7 +262,6 @@ def create_app():
         if assets_collection.count_documents({"_id": oid}, limit=1) == 0:
             return jsonify({"message": "Invalid id."}), 400
 
-        selling_price = data.get("selling_price")
         if (
             not isinstance(selling_price, (int, float))
             or isinstance(selling_price, bool)

@@ -1,0 +1,16 @@
+FROM python:3.10.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY director/requirements.txt ./requirements.txt
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY director/app.py director/Voting.json ./
+EXPOSE 5002
+
+CMD ["gunicorn", "-b", "0.0.0.0:5002","--timeout","60", "--access-logfile", "-", "app:create_app()"]

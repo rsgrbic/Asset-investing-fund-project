@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ganache
+  namespace: iep
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ganache
+  template:
+    metadata:
+      labels:
+        app: ganache
+    spec:
+      containers:
+        - name: ganache
+          image: trufflesuite/ganache-cli:latest
+          args:
+            - --host=0.0.0.0
+            - --port=8545
+            - --gasLimit=10000000
+            - --accounts=10
+            - --defaultBalanceEther=10000
+          ports:
+            - containerPort: 8545
+          volumeMounts:
+            - name: ganache-data
+              mountPath: /appData
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "node -e \"const http=require('http');const r=http.request({hostname:'localhost',port:8545,method:'POST',headers:{'Content-Type':'application/json'}},res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.write(JSON.stringify({jsonrpc:'2.0',method:'eth_blockNumber',params:[],id:1}));r.end()\""
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: ganache-data
+          persistentVolumeClaim:
+            claimName: ganache-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ganache
+  namespace: iep
+spec:
+  type: LoadBalancer
+  selector:
+    app: ganache
+  ports:
+    - port: 8545
+      targetPort: 8545

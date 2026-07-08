@@ -12,7 +12,12 @@ from models import User ,db, hash_password, verify_password
 basedir= os.path.abspath(os.path.dirname(__file__))
 def _is_valid_email(email):
     try:
-        validate_email(email, check_deliverability=False)
+        result =validate_email(email, check_deliverability=False)
+        if len(result.domain)<2:
+            return False
+        tld = result.domain.rsplit(".", 1)[-1]
+        if len(tld) < 2:
+            return False
         return True
     except EmailNotValidError:
         return False
@@ -31,15 +36,14 @@ def _get_str(data, name):
 def create_app():
 
     def _seed_director():
-        director_role= app.config["DIRECTOR_ROLE"]
         if User.query.filter_by(email="onlymoney@gmail.com").first() is not None:
             return
         user = User(
-        email="onlymoney@gmail.com",
-        forename="Scrooge",
-        surname="McDuck",
-        password_hash=hash_password("evenmoremoney"),
-        roles=director_role
+        email = os.environ.get("DIRECTOR_EMAIL", "fallback@gmail.com"),
+        password_hash =hash_password( os.environ.get("DIRECTOR_PASSWORD", "fallbackPass")),
+        forename = os.environ.get("DIRECTOR_FORENAME", "fallBackName"),
+        surname = os.environ.get("DIRECTOR_SURNAME", "fallBackSurname"),
+        role=director_role
         )
         db.session.add(user)
         try:
@@ -50,14 +54,14 @@ def create_app():
     app = Flask(__name__)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-        "DATABASE_URL",  f"sqlite:///{os.path.join(basedir, 'app.db')}"
+        "SQL_DATABASE_URL",  f"sqlite:///{os.path.join(basedir, 'app.db')}"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]= False
 
-    app.config["DIRECTOR_ROLE"] = os.environ.get("DIRECTOR_ROLE", "director")
-    app.config["EMPLOYEE_ROLE"] = os.environ.get("EMPLOYEE_ROLE", "employee")
+    director_role = os.environ.get("DIRECTOR_ROLE", "director")
+    employee_role = os.environ.get("EMPLOYEE_ROLE", "employee")
 
-    app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "JWT_SECRET_DEV_KEY")
+    app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY","HARDCODED")
     app.config["JWT_ALGORITHM"] = "HS256"
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
     JWTManager(app)
@@ -97,13 +101,13 @@ def create_app():
         if User.query.filter_by(email=email).first() is not None:
             return jsonify({"message": "Email already exists."}), 400
         
-        newUserRole= app.config["EMPLOYEE_ROLE"]
+        newUserRole= employee_role
         user = User(
             email=email,
             forename=forename,
             surname=surname,
             password_hash=hash_password(password),
-            roles=newUserRole,
+            role=newUserRole,
         )
         db.session.add(user)
 
@@ -122,7 +126,7 @@ def create_app():
 
         email= _get_str(data,"email")
         if email is None:
-            return jsonify({"message":"Field email is missing"}),400
+            return jsonify({"message":"Field email is missing."}),400
 
         password = _get_str(data, "password")
         if password is None:
@@ -133,12 +137,12 @@ def create_app():
         
         user = User.query.filter_by(email=email).first()
         if user is None or not verify_password(password,user.password_hash):
-            return jsonify ({"message":"Invalid credentials"}), 400
+            return jsonify ({"message":"Invalid credentials."}), 400
         
         additional_claims ={
             "forename":user.forename,
             "surname":user.surname,
-            "roles": user.role_list()
+            "role": user.role
         }
 
         token = create_access_token(identity=email,additional_claims=additional_claims)

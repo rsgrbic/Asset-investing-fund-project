@@ -11,9 +11,7 @@ class User(db.Model):
     forename = db.Column(db.String(256), nullable=False)
     surname = db.Column(db.String(256), nullable=False)
     password_hash = db.Column(db.String(512), nullable=False)
-    roles = db.Column(db.String(256), nullable=False, default="employee")
-    def role_list(self):
-        return [r for r in self.roles.split(",") if r]
+    role = db.Column(db.String(256), nullable=False)
     
 def hash_password(password: str) -> str:
     salt= os.urandom(16)

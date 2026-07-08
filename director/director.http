@@ -1,0 +1,151 @@
+@authHost = http://localhost:5000
+@empHost = http://localhost:5001
+@dirHost = http://localhost:5002
+
+### ===========================================
+###              0. HEALTH
+### ===========================================
+
+### 0a. Director health (no auth)
+GET {{dirHost}}/health
+
+### ===========================================
+###        1. GET TOKENS (run these first)
+### ===========================================
+
+### 1a. Register an employee (so we have a non-director JWT to test 401s)
+# @name registerEmp
+POST {{authHost}}/register
+Content-Type: application/json
+
+{
+  "forename": "John",
+  "surname": "Doe",
+  "email": "john_director_test@gmail.com",
+  "password": "aA123456"
+}
+
+### 1b. Login as the employee (saved as {{empToken}})
+# @name loginEmp
+POST {{authHost}}/login
+Content-Type: application/json
+
+{
+  "email": "john_director_test@gmail.com",
+  "password": "aA123456"
+}
+
+### 1c. Login as the seeded director (saved as {{dirToken}})
+# @name loginDirector
+POST {{authHost}}/login
+Content-Type: application/json
+
+{
+  "email": "onlymoney@gmail.com",
+  "password": "evenmoremoney"
+}
+
+### ===========================================
+###              2. /report
+### ===========================================
+
+### 2a. /report with no auth → 401
+GET {{dirHost}}/report
+
+### 2b. /report with employee JWT → 401 (only director can read)
+GET {{dirHost}}/report
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+
+### 2c. /report with director JWT → 200, empty statistics
+GET {{dirHost}}/report
+Authorization: Bearer {{loginDirector.response.body.accessToken}}
+
+### 2d. /report with bogus token → 401
+GET {{dirHost}}/report
+Authorization: Bearer not-a-real-token
+
+### ===========================================
+###          3. SEED PENDING ORDERS
+### ===========================================
+
+### 3a. Create a buy order via the employee service
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond A",
+  "categories": ["finance", "fixed"],
+  "buying_price": 100,
+  "info": { "issuer": { "country": "US" } }
+}
+
+### 3b. Create another buy order (different categories for the sort test)
+POST {{empHost}}/create_buy_order
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Bond C",
+  "categories": ["finance"],
+  "buying_price": 200,
+  "info": {}
+}
+
+### ===========================================
+###          4. /pending_orders
+### ===========================================
+
+
+### 4c. /pending_orders with director JWT → 200, 2 orders
+# @name pendingOrders
+GET {{dirHost}}/pending_orders
+Authorization: Bearer {{loginDirector.response.body.accessToken}}
+
+### ===========================================
+###             5. /decision
+### ===========================================
+
+
+### 5j. /decision happy path → 200, contract deploys, polling thread starts
+# REQUIRES Ganache running on :8545
+# @name decisionHappy
+POST {{dirHost}}/decision
+Authorization: Bearer {{loginDirector.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "uuid": "{{pendingOrders.response.body.orders.0.uuid}}",
+  "voters": [
+    "0x1111111111111111111111111111111111111111",
+    "0x2222222222222222222222222222222222222222",
+    "0x3333333333333333333333333333333333333333"
+  ]
+}
+
+### ===========================================
+###     6. POST-DECISION (after watcher fires)
+### ===========================================
+
+### 6a. Send a castApprove transaction from the first voter
+# (Requires web3.py or `cast` CLI; REST Client can do this with @grpc-like
+#  pattern, but most teams just verify via a Python script. The .http file
+#  covers the HTTP surface; the on-chain voting is out of scope for REST.)
+
+### 6b. /pending_orders after the watcher finalizes the order
+# Wait 5+ seconds after request 5j for the polling thread to see the event.
+# The order should be gone from Redis and a new asset should be in Mongo.
+GET {{dirHost}}/pending_orders
+Authorization: Bearer {{loginDirector.response.body.accessToken}}
+
+### 6c. /report after finalization — Bond A should appear with spent=100
+GET {{dirHost}}/report
+Authorization: Bearer {{loginDirector.response.body.accessToken}}
+
+### ===========================================
+###              7. CLEANUP
+### ===========================================
+
+### 7a. Delete the test employee
+POST {{authHost}}/delete
+Authorization: Bearer {{loginEmp.response.body.accessToken}}
