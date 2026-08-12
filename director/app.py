@@ -160,7 +160,7 @@ def create_app():
                     return
             except Exception:
                 pass
-            time.sleep(10)
+            time.sleep(0.5)
     
     # Locals
     

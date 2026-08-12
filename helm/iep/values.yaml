@@ -1,0 +1,204 @@
+# =============================================================================
+# DEFAULTS = local (Docker Desktop). Helm always loads this file.
+#
+#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
+#     -f secrets.local.yaml
+#
+# values-hosted.yaml describes the AKS cluster. It repeats the structure
+# rather than being a sparse patch, so it can be read on its own.
+# =============================================================================
+
+# Prefix applied to every image below. Empty means plain names, which is what
+# locally built images need. No trailing slash — the template adds it, and the
+# check happens once rather than at every use site.
+#   local:  ""                 -> iep-auth:latest
+#   hosted: "iepacr.azurecr.io" -> iepacr.azurecr.io/iep-auth:a3f9c1e
+registry: ""
+
+services:
+  auth:
+    image: iep-auth:latest
+    replicaCount: 1
+    port: 5000
+    host: auth.iep.local
+    # requests are what the scheduler reserves AND what the HPA divides by —
+    # without a cpu request, autoscaling silently does nothing.
+    resources:
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { cpu: 500m, memory: 384Mi }
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 80
+
+  employee:
+    image: iep-employee:latest
+    # 3 locally too, so the ingress actually load-balances and local behaviour
+    # matches the cluster.
+    replicaCount: 3
+    port: 5001
+    host: employee.iep.local
+    resources:
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { cpu: 500m, memory: 384Mi }
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+
+  director:
+    image: iep-director:latest
+    # MUST STAY AT 1, autoscaling MUST stay off. POST /decision spawns a
+    # background thread that waits for the on-chain Finalized event before
+    # writing to MongoDB. That thread lives in one Pod. With 2+ replicas the
+    # vote can be finalised by a Pod that has no listener and the write never
+    # happens. Move the listener to a worker before changing this.
+    replicaCount: 1
+    port: 5002
+    host: director.iep.local
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 384Mi }
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 1
+      targetCPUUtilizationPercentage: 80
+
+# ---- The ingress CONTROLLER (subchart) --------------------------------------
+# The nginx Pods that actually route traffic. Declared as a dependency in
+# Chart.yaml, so it installs alongside the app. Two separate things get
+# confused constantly:
+#   this block          = the controller, the thing doing the routing
+#   the `ingress` block = our Ingress resource, the routing RULE it reads
+# A rule with no controller running is inert — no error, no traffic.
+#
+# Set enabled: false if the cluster already has a controller (it is
+# cluster-scoped, so two would collide over the IngressClass).
+ingress-nginx:
+  enabled: true
+  controller:
+    replicaCount: 1
+    service:
+      # Docker Desktop maps this to localhost; AKS provisions a public IP.
+      type: LoadBalancer
+    # If the install hangs on "failed calling webhook", the validating webhook
+    # cannot be reached — set this to false to skip it.
+    admissionWebhooks:
+      enabled: true
+
+# ---- cert-manager (subchart) -------------------------------------------------
+# Issues and renews TLS certificates. OFF locally, and not out of laziness:
+# Let's Encrypt validates a hostname by fetching a token from it over the
+# PUBLIC internet, and *.iep.local resolves only on this machine. There is no
+# way to obtain a real certificate for a local-only name.
+cert-manager:
+  enabled: false
+  crds:
+    # cert-manager's CRDs (Certificate, ClusterIssuer, Order, Challenge...).
+    # Helm installs CRDs but never upgrades or deletes them — a CRD version
+    # bump is a manual step, not something `helm upgrade` handles.
+    enabled: true
+
+# ---- Our Ingress RESOURCE ---------------------------------------------------
+# One Ingress routing all three services by hostname:
+#     auth.iep.local     -> auth     :5000
+#     employee.iep.local -> employee :5001
+#     director.iep.local -> director :5002
+# On locally as well as hosted, so the routing path is exercised before Azure.
+ingress:
+  enabled: true
+  # Must match the controller's IngressClass. The subchart above creates one
+  # called "nginx".
+  className: nginx
+
+  # Name of the ClusterIssuer the Ingress asks for certificates from. Setting
+  # it turns TLS on. Empty locally — see the cert-manager block above.
+  clusterIssuer: ""
+  # Setting an email additionally makes this chart CREATE that ClusterIssuer
+  # (templates/app/clusterissuer.yaml). Let's Encrypt requires it for expiry
+  # notices. Leave empty to reference an issuer you created yourself.
+  acmeEmail: ""
+  # Production Let's Encrypt. Swap for
+  #   https://acme-staging-v02.api.letsencrypt.org/directory
+  # to get untrusted certs under far looser rate limits — see README §6.
+  acmeServer: https://acme-v02.api.letsencrypt.org/directory
+
+  # nginx settings for the whole Ingress. See the header comment in
+  # templates/app/ingress.yaml for what an annotation is and why these exist.
+  annotations:
+    # Cap on request body size. Default is 1m, which is small for JSON payloads.
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    # director's POST /decision can block while deploying a contract to
+    # Ganache. nginx's default 60s races director's gunicorn --timeout 60.
+    # Harmless for auth and employee: this caps how long nginx is willing to
+    # wait, it does not add latency to fast responses.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+
+# Non-secret env, injected into all three services.
+env:
+  EMPLOYEE_ROLE: employee
+  DIRECTOR_ROLE: director
+  VOTING_DEADLINE_SECONDS: "3600"
+  MYSQL_DATABASE: iep_auth
+
+# create: true  -> chart renders Secret "iep-secret" from the values below.
+#                  Local only. Supply real values via a gitignored
+#                  -f secrets.local.yaml; never commit them.
+# create: false -> chart renders nothing and expects "iep-secret" to already
+#                  exist in the namespace. This is what values-hosted.yaml does.
+secrets:
+  create: true
+  jwtSecretKey: "CHANGE_ME_dev_only"
+  mysqlRootPassword: "CHANGE_ME_dev_only"
+  sqlDatabaseUrl: "mysql+pymysql://root:CHANGE_ME_dev_only@mysql:3306/iep_auth?charset=utf8mb4"
+  directorEmail: "director@example.com"
+  directorForename: "Scrooge"
+  directorSurname: "McDuck"
+  directorPassword: "CHANGE_ME_dev_only"
+
+# Single-Pod MySQL/Mongo/Redis with PVCs. No HA — fine here, not production.
+infra:
+  mysql:
+    image: mysql:8.0
+    storage: 4Gi
+    storageClass: "" # empty = cluster default (hostpath on Docker Desktop)
+    resources:
+      requests: { cpu: 50m, memory: 384Mi }
+      limits: { cpu: 1000m, memory: 1Gi }
+  mongo:
+    image: mongo:6
+    storage: 4Gi
+    storageClass: ""
+    resources:
+      requests: { cpu: 50m, memory: 192Mi }
+      limits: { cpu: 1000m, memory: 768Mi }
+  redis:
+    image: redis:7-alpine
+    storage: 1Gi
+    storageClass: ""
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+  # In-memory chain, no --db: every restart wipes contracts and balances.
+  # Off when running the grader without --with-blockchain.
+  ganache:
+    enabled: true
+    # Expose the JSON-RPC endpoint through the ingress, for the pytest grader's
+    # --provider-url and for MetaMask/curl from the host. Empty = cluster-only.
+    #
+    # Leave this EMPTY on any cluster reachable from the internet: Ganache has
+    # no authentication whatsoever, so a public JSON-RPC endpoint lets anyone
+    # drain the funded accounts, deploy contracts, or mine at your expense.
+    # director reaches it in-cluster via http://ganache:8545 regardless.
+    host: ganache.iep.local
+    image: trufflesuite/ganache-cli:latest
+    defaultBalanceEther: 10000
+    accounts: 10
+    gasLimit: 10000000
+    resources:
+      requests: { cpu: 50m, memory: 192Mi }
+      limits: { cpu: 1000m, memory: 768Mi }

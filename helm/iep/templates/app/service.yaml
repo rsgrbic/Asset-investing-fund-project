@@ -1,0 +1,24 @@
+{{/*
+ClusterIP, not LoadBalancer. The raw manifests in kubernetes/ used
+LoadBalancer for all three, which on AKS is three separately billed public IPs.
+Everything now enters through the single ingress controller.
+*/}}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+{{- end }}

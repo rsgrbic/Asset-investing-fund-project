@@ -1,0 +1,31 @@
+{{ .Chart.Name }} {{ .Chart.Version }} -> release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Registry: {{ .Values.registry | default "(none — local images)" }}
+Secrets:  {{ if .Values.secrets.create }}created by this chart{{ else }}external — expecting Secret "iep-secret"{{ end }}
+{{ range $name, $svc := .Values.services }}
+  {{ printf "%-9s" $name }} {{ $svc.image }}  x{{ $svc.replicaCount }}
+{{- end }}
+
+  kubectl get pods -n {{ .Release.Namespace }} -w
+
+{{ if .Values.ingress.enabled -}}
+One Ingress "iep" routes all three by hostname:
+{{- range $name, $svc := .Values.services }}
+  {{ if $.Values.ingress.clusterIssuer }}https{{ else }}http{{ end }}://{{ $svc.host }}
+{{- end }}
+
+These hostnames must resolve to the ingress controller's address:
+  kubectl get svc -n ingress-nginx ingress-nginx-controller
+
+Locally that is 127.0.0.1 — add the three names to your hosts file, or test
+without DNS at all:
+  curl -H "Host: {{ (index .Values.services "auth").host }}" http://127.0.0.1/health
+{{- else -}}
+Ingress is disabled. Reach a service directly:
+{{- range $name, $svc := .Values.services }}
+  kubectl port-forward -n {{ $.Release.Namespace }} svc/{{ $name }} {{ $svc.port }}:{{ $svc.port }}
+{{- end }}
+{{- end }}
+{{ if and .Values.secrets.create (contains "CHANGE_ME" (.Values.secrets.jwtSecretKey | toString)) }}
+!! Placeholder secrets in use. Supply real values with -f secrets.local.yaml.
+{{ end }}

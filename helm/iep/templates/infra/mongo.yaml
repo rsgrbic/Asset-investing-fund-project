@@ -1,0 +1,61 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+        app.kubernetes.io/name: mongo
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: mongo
+          image: {{ .Values.infra.mongo.image | quote }}
+          ports:
+            - name: mongo
+              containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.infra.mongo.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mongo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: mongo

@@ -1,0 +1,31 @@
+# Patterns are matched against paths INSIDE this chart directory (helm/iep/)
+# and only affect `helm package` — the tarball a registry or ArgoCD would pull.
+# They have no effect on `helm install` from a local path.
+
+# Version control
+.git/
+.gitignore
+.vscode/
+
+# Editor / OS noise
+*.swp
+*.bak
+*.tmp
+*~
+.DS_Store
+
+# DO NOT add a *.tgz rule here. `helm dependency update` puts the subcharts in
+# charts/*.tgz, and this file filters those too — even anchored as `/*.tgz`.
+# The result is a chart that lints with
+#   "chart directory is missing these dependencies: ingress-nginx,cert-manager"
+# and refuses to package. Stray tarballs are already covered by .gitignore.
+
+# Defensive: real secret values are supposed to live in secrets.local.yaml at
+# the repo ROOT, outside this directory. If one ever gets dropped in here by
+# mistake, keep it out of the packaged chart.
+secrets.local.yaml
+secrets.*.local.yaml
+*.dec.yaml
+
+# NOTE: scale/ is deliberately NOT ignored. Those files are part of the chart's
+# interface and must travel with it.

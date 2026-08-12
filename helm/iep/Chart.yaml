@@ -1,0 +1,46 @@
+apiVersion: v2
+name: iep
+description: IEP investment-fund microservices (auth, employee, director) with in-cluster MySQL, MongoDB, Redis and Ganache.
+type: application
+
+# version = the version of THIS CHART. Bump it on every chart change.
+version: 0.5.0
+
+# appVersion = the version of the APPLICATION. Informational only — image tags
+# are full strings in values, so nothing derives from this.
+appVersion: "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Cluster add-ons ship WITH this chart, so `helm install` produces a working,
+# reachable deployment in one command.
+#
+# ONE-TIME setup, not something you run before every install:
+#     helm dependency update ./helm/iep   <- when the list below changes;
+#                                            re-resolves versions, rewrites Chart.lock
+#     helm dependency build  ./helm/iep   <- fresh clone; installs exactly the
+#                                            versions already in Chart.lock
+# charts/ is gitignored (downloaded content); Chart.lock is committed.
+#
+# Both are cluster-scoped shared infrastructure: they create IngressClasses,
+# CRDs and ClusterRoles. Two releases of this chart in one cluster would
+# collide, and `helm uninstall` takes them down with the app. Set either
+# .enabled=false if the cluster already has one — which is what you will do in
+# stage 4, where GitOps convention manages add-ons as separate Applications.
+# ---------------------------------------------------------------------------
+dependencies:
+  # The ingress controller. Always on: without it the Ingress resource is inert.
+  - name: ingress-nginx
+    version: "4.15.x"
+    repository: https://kubernetes.github.io/ingress-nginx
+    condition: ingress-nginx.enabled
+
+  # Issues and renews TLS certificates. OFF locally — Let's Encrypt must reach
+  # the hostname from the public internet to validate it, which *.iep.local
+  # never will. On only in values-hosted.yaml.
+  - name: cert-manager
+    version: "v1.21.x"
+    repository: https://charts.jetstack.io
+    condition: cert-manager.enabled
+
+maintainers:
+  - name: rsgrbic

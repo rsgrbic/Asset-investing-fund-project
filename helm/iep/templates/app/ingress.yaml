@@ -1,0 +1,97 @@
+{{/*
+=============================================================================
+ONE Ingress covering all three services, routed by hostname.
+
+WHAT ANNOTATIONS ARE, since they do most of the work here
+  The Kubernetes Ingress spec only describes host -> service -> port. It has
+  no field for timeouts, body size, redirects or certificates, because those
+  are things a SPECIFIC controller does and the spec is vendor-neutral. So
+  each controller reads its own settings from annotations — free-form
+  key/value strings attached to the resource:
+
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+          read by ingress-nginx: how long to wait for a backend response
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+          read by cert-manager: issue a certificate for the hosts below
+
+  Nothing validates them. A misspelled annotation is silently ignored rather
+  than rejected, which is the main thing to watch for.
+
+  Annotations apply to the whole Ingress OBJECT, so with one object every
+  setting here applies to all three services. That is fine: the only
+  service-specific need is director's longer proxy timeout, and a generous
+  read timeout costs auth and employee nothing — it only caps how long nginx
+  is willing to wait, it does not add latency.
+
+WHY HOST-BASED AND NOT PATH-BASED
+  These Flask apps serve from the root — auth exposes /register, not
+  /auth/register — so path routing would need a rewrite-target annotation to
+  strip the prefix. Hostnames avoid that entirely.
+
+Requires an ingress controller running in the cluster. An Ingress resource
+with nothing watching it is inert: no error, no event, no traffic.
+=============================================================================
+*/}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iep
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: iep
+  annotations:
+    {{- if .Values.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- if .Values.ingress.clusterIssuer }}
+  {{- /* One certificate with all three hostnames as SANs, rather than three
+         separate certificates. cert-manager creates this Secret and fills it
+         in; it does not exist at first deploy, and until it appears nginx
+         serves its own self-signed default and browsers warn. */}}
+  tls:
+    - hosts:
+        {{- range $name, $svc := .Values.services }}
+        - {{ $svc.host | quote }}
+        {{- end }}
+        {{- if and .Values.infra.ganache.enabled .Values.infra.ganache.host }}
+        - {{ .Values.infra.ganache.host | quote }}
+        {{- end }}
+      secretName: iep-tls
+  {{- end }}
+  rules:
+    {{- range $name, $svc := .Values.services }}
+    - host: {{ $svc.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  name: http
+    {{- end }}
+    {{- /* Ganache lives under .Values.infra, not .Values.services, so it needs
+           its own rule rather than falling out of the loop above. Only routed
+           when a host is set — see the warning in values.yaml, this endpoint
+           has no authentication of any kind. */}}
+    {{- if and .Values.infra.ganache.enabled .Values.infra.ganache.host }}
+    - host: {{ .Values.infra.ganache.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ganache
+                port:
+                  name: rpc
+    {{- end }}
+{{- end }}

@@ -1,5 +1,26 @@
-.venv/**
-*/__pycache__/*
-test/**
-.*
+.venv/
+*/__pycache__/
+__pycache__/
+*.pyc
+
+test/
+
+# Working notes and AI-assistant guidance. Useful locally, not part of the
+# deliverable.
 AGENTS.md
+CLAUDE.md
+plan.md
+# The long-form Helm walkthrough (helm/README.local.md). helm/README.md is the
+# committed reference; the .local.md one is the learning write-up.
+*.local.md
+
+.vscode/
+
+# Local secret overrides for Helm. NEVER commit these.
+secrets.local.yaml
+secrets.*.local.yaml
+*.dec.yaml
+
+# Helm build output
+helm/**/charts/
+*.tgz

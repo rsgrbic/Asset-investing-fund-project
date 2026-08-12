@@ -1,0 +1,21 @@
+{{/*
+Non-secret env for all three services. The URLs are the in-cluster Service
+names — set explicitly rather than relying on the apps' built-in defaults,
+since director's MONGO_URL default is localhost and would silently not work.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iep-config
+  labels:
+    app.kubernetes.io/name: iep-config
+    app.kubernetes.io/component: config
+    app.kubernetes.io/part-of: iep
+data:
+  EMPLOYEE_ROLE: {{ .Values.env.EMPLOYEE_ROLE | quote }}
+  DIRECTOR_ROLE: {{ .Values.env.DIRECTOR_ROLE | quote }}
+  VOTING_DEADLINE_SECONDS: {{ .Values.env.VOTING_DEADLINE_SECONDS | quote }}
+  MYSQL_DATABASE: {{ .Values.env.MYSQL_DATABASE | quote }}
+  MONGO_URL: "mongodb://mongo:27017"
+  REDIS_URL: "redis://redis:6379/0"
+  GANACHE_URL: "http://ganache:8545"

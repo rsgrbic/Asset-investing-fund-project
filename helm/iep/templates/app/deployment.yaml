@@ -1,0 +1,70 @@
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  {{- /* Omitted when an HPA owns this Deployment, or the two fight: every
+         `helm upgrade` resets the count and the HPA undoes it 15s later. */}}
+  {{- if not $svc.autoscaling.enabled }}
+  replicas: {{ $svc.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ $name }} # immutable — changing it needs a delete + recreate
+  template:
+    metadata:
+      labels:
+        app: {{ $name }} # must match the selector above
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/component: microservice
+        app.kubernetes.io/part-of: iep
+      annotations:
+        {{- /* Kubernetes does not restart Pods when a ConfigMap or Secret read
+               via envFrom changes. Hashing the rendered config into the Pod
+               template is what makes the Deployment roll. */}}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+        {{- if $.Values.secrets.create }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") $ | sha256sum }}
+        {{- end }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          {{- /* `with` runs its block only when registry is non-empty, so an
+                 empty registry contributes literally nothing and the image is
+                 just "iep-auth:latest". trimSuffix makes a trailing slash in
+                 the value harmless either way. */}}
+          image: "{{ with $.Values.registry }}{{ trimSuffix "/" . }}/{{ end }}{{ $svc.image }}"
+          {{- /* Explicit, because Kubernetes defaults this to Always for a
+                 :latest tag — which would try to pull local images from Docker
+                 Hub and fail. Correct for immutable SHA tags too. */}}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          envFrom:
+            - configMapRef:
+                name: iep-config
+            - secretRef:
+                name: iep-secret
+          {{- /* startup: allows a slow first boot (auth runs create_all and
+                 seeds the director user) without making liveness lenient.
+                 readiness: "send traffic here". liveness: "restart it". */}}
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+{{- end }}

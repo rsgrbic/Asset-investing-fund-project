@@ -1,0 +1,59 @@
+# =============================================================================
+# SCALE: MEDIUM — a mid-size firm. Tens of concurrent users, steady daily use.
+#
+#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
+#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/medium.yaml
+#
+# First tier where autoscaling earns its keep. Needs metrics-server in the
+# cluster or the HPA silently does nothing.
+# =============================================================================
+
+services:
+  auth:
+    # Two replicas so a restart or node drain doesn't take logins down.
+    replicaCount: 2
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    autoscaling:
+      enabled: false
+
+  employee:
+    # The workhorse — search and order creation. Scales with headcount.
+    replicaCount: 2
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 70
+
+  director:
+    # STILL 1, and this is the scaling ceiling of the whole system. The
+    # background Finalized-event listener is in-memory, so director cannot be
+    # replicated. Approvals are low-volume so it holds fine here.
+    replicaCount: 1
+    resources:
+      requests: { cpu: 150m, memory: 192Mi }
+      limits: { cpu: 750m, memory: 512Mi }
+    autoscaling:
+      enabled: false
+
+infra:
+  mysql:
+    storage: 16Gi
+    resources:
+      requests: { cpu: 200m, memory: 768Mi }
+      limits: { cpu: 1000m, memory: 2Gi }
+  mongo:
+    storage: 16Gi
+    resources:
+      requests: { cpu: 200m, memory: 768Mi }
+      limits: { cpu: 1000m, memory: 2Gi }
+  redis:
+    storage: 4Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }

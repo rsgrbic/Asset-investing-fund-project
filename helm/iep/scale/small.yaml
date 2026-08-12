@@ -1,0 +1,53 @@
+# =============================================================================
+# SCALE: SMALL — a small business. A handful of concurrent users, one office.
+#
+#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
+#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/small.yaml
+#
+# Scale is a SEPARATE axis from environment. values.yaml / values-hosted.yaml
+# decide *where* it runs; this file decides *how big*. Stack both with -f.
+#
+# Fits comfortably on a single 2-vCPU node.
+# =============================================================================
+
+services:
+  auth:
+    replicaCount: 1
+    resources:
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    autoscaling:
+      enabled: false
+
+  employee:
+    replicaCount: 1
+    resources:
+      requests: { cpu: 50m, memory: 96Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    autoscaling:
+      enabled: false
+
+  director:
+    replicaCount: 1
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    autoscaling:
+      enabled: false
+
+infra:
+  mysql:
+    storage: 4Gi
+    resources:
+      requests: { cpu: 50m, memory: 384Mi }
+      limits: { cpu: 500m, memory: 1Gi }
+  mongo:
+    storage: 4Gi
+    resources:
+      requests: { cpu: 50m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 768Mi }
+  redis:
+    storage: 1Gi
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 256Mi }
