@@ -63,6 +63,10 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/iep-${{ matrix.service }}:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/iep-${{ matrix.service }}:latest
+          # Links the package to this repo, so Actions inherits write access
+          # instead of needing it granted by hand in the package settings.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -113,7 +117,10 @@ jobs:
             for scale in small medium large; do
               echo "checking $env + $scale"
               # Throwaway values so the Secret template is created.
+              # -n iep so rendered objects carry namespace: iep. Without it
+              # Release.Namespace is "default" and kubectl rejects the mismatch.
               helm template iep ./helm/iep \
+                -n iep \
                 -f "helm/iep/$env" \
                 -f "helm/iep/scale/$scale.yaml" \
                 --set ingress.clusterIssuer="" \
@@ -121,7 +128,9 @@ jobs:
                 --set secrets.mysqlRootPassword=ci \
                 --set secrets.sqlDatabaseUrl=ci \
                 --set secrets.directorPassword=ci \
-              | kubectl apply -n iep --dry-run=server -f - > /dev/null
+              # No -n here on purpose: a few subchart objects target kube-system,
+              # and any -n would conflict with those.
+              | kubectl apply --dry-run=server -f - > /dev/null
             done
           done
 
