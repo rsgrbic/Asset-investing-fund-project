@@ -128,8 +128,6 @@ jobs:
                 --set secrets.mysqlRootPassword=ci \
                 --set secrets.sqlDatabaseUrl=ci \
                 --set secrets.directorPassword=ci \
-              # No -n here on purpose: a few subchart objects target kube-system,
-              # and any -n would conflict with those.
               | kubectl apply --dry-run=server -f - > /dev/null
             done
           done
