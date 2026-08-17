@@ -17,7 +17,11 @@ registry: ""
 
 services:
   auth:
-    image: iep-auth:latest
+    image:
+      repository: iep-auth
+      # Locally built straight into the cluster's daemon. values-hosted.yaml
+      # overrides this with the git SHA.
+      tag: latest
     replicaCount: 1
     port: 5000
     host: auth.iep.local
@@ -33,7 +37,9 @@ services:
       targetCPUUtilizationPercentage: 80
 
   employee:
-    image: iep-employee:latest
+    image:
+      repository: iep-employee
+      tag: latest
     # 3 locally too, so the ingress actually load-balances and local behaviour
     # matches the cluster.
     replicaCount: 3
@@ -49,7 +55,9 @@ services:
       targetCPUUtilizationPercentage: 70
 
   director:
-    image: iep-director:latest
+    image:
+      repository: iep-director
+      tag: latest
     # MUST STAY AT 1, autoscaling MUST stay off. POST /decision spawns a
     # background thread that waits for the on-chain Finalized event before
     # writing to MongoDB. That thread lives in one Pod. With 2+ replicas the

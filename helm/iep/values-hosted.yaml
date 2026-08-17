@@ -1,133 +1,68 @@
 # =============================================================================
-# HOSTED — the AKS cluster.
+# HOSTED — the AKS cluster. Layered on top of values.yaml.
 #
 #   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
-#     -f helm/iep/values-hosted.yaml
+#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/small.yaml
 #
-# Layered on top of values.yaml, but written out in full rather than as a
-# sparse patch — you should be able to read this file alone and know what the
-# cluster looks like. Keys left out (env, probes, ganache) are identical to
-# local on purpose: if the two drift, testing locally stops meaning anything.
+# ONLY environment-specific keys belong here — the things that are true because
+# this is Azure. Sizing (replicas, resources, storage) lives in scale/, and
+# anything set here would be silently overridden by it.
 #
 # NOTHING SECRET GOES IN THIS FILE. It is committed to git.
 # =============================================================================
 
-# Every image below gets this prefix. No trailing slash.
-registry: "" # TODO stage 2: "<acrName>.azurecr.io" or "ghcr.io/rsgrbic"
+registry: "ghcr.io/rsgrbic"
 
+# image.tag is rewritten by CI on every push to main — never :latest here, an
+# immutable tag is what makes "which commit is running?" answerable.
+# image.repository is inherited from values.yaml.
 services:
-  # CI rewrites the image tags with the git SHA. Never :latest here — an
-  # immutable tag is what makes "which commit is running?" answerable.
   auth:
-    image: iep-auth:latest
-    replicaCount: 2
-    port: 5000
-    host: auth.iep.example.com # TODO stage 2: real hostname
-    resources:
-      requests: { cpu: 100m, memory: 128Mi }
-      limits: { cpu: 500m, memory: 512Mi }
-    autoscaling:
-      enabled: false
-      minReplicas: 1
-      maxReplicas: 4
-      targetCPUUtilizationPercentage: 80
-
+    host: auth.20.215.101.37.sslip.io
+    image:
+      tag: latest
   employee:
-    image: iep-employee:latest
-    replicaCount: 3
-    port: 5001
-    host: employee.iep.example.com
-    resources:
-      requests: { cpu: 100m, memory: 128Mi }
-      limits: { cpu: 500m, memory: 512Mi }
-    # The only service that could autoscale. Leave off until Prometheus
-    # (stage 5) shows the real CPU baseline — README §5 explains why CPU is a
-    # weak signal for these I/O-bound services.
-    autoscaling:
-      enabled: false
-      minReplicas: 2
-      maxReplicas: 6
-      targetCPUUtilizationPercentage: 70
-
+    host: employee.20.215.101.37.sslip.io
+    image:
+      tag: latest
   director:
-    image: iep-director:latest
-    replicaCount: 1 # do not raise — see values.yaml
-    port: 5002
-    host: director.iep.example.com
-    resources:
-      requests: { cpu: 100m, memory: 192Mi }
-      limits: { cpu: 500m, memory: 512Mi }
-    autoscaling:
-      enabled: false
-      minReplicas: 1
-      maxReplicas: 1
-      targetCPUUtilizationPercentage: 80
+    host: director.20.215.101.37.sslip.io
+    image:
+      tag: latest
 
-# The controller ships with the chart here too, so AKS gets one public IP
-# (the controller's) instead of three. Set enabled: false if you would rather
-# manage the controller as its own ArgoCD Application in stage 4 — that is the
-# more conventional split once GitOps is in play.
 ingress-nginx:
-  enabled: true
   controller:
-    replicaCount: 1
     service:
-      type: LoadBalancer
+      annotations:
+        # Required, or nothing reaches the cluster. Azure probes the nodePort
+        # with `GET /` and drops traffic to any node that does not answer
+        # 2xx/3xx; ingress-nginx returns 404 there because a probe carries no
+        # matching Host header. /healthz answers 200 regardless of Host.
+        service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
 
-# On here, off locally. Installs the controller and CRDs; the chart also
-# creates the ClusterIssuer itself, because acmeEmail is set below.
 cert-manager:
   enabled: true
-  crds:
-    enabled: true
 
 ingress:
-  enabled: true
-  className: nginx
-  # All three hostnames must ALREADY resolve publicly to the controller's IP
-  # before this is set, or validation fails. One certificate covers all three,
-  # so if one hostname is wrong none of them get TLS — README §6 covers the
-  # Let's Encrypt failure modes, the fiddliest part of the migration.
   clusterIssuer: letsencrypt
-  acmeEmail: "" # TODO stage 2: required, or no ClusterIssuer is created
-  acmeServer: https://acme-v02.api.letsencrypt.org/directory
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: 2m
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+  acmeEmail: "ga210363d@student.etf.bg.ac.rs"
 
 infra:
+  # Ganache has no authentication, so it is deliberately NOT routed here.
+  # director still reaches it in-cluster at http://ganache:8545.
   ganache:
-    enabled: true
-    # DELIBERATELY EMPTY, unlike local. Ganache has no authentication, so an
-    # internet-reachable JSON-RPC endpoint lets anyone drain the funded
-    # accounts or deploy arbitrary contracts. director still reaches it
-    # in-cluster at http://ganache:8545.
     host: ""
-
-  # Only the storage class differs from local: Azure managed disks instead of
-  # the hostpath provisioner. Note Azure's minimum managed disk is 4 GiB, so a
-  # smaller request is rounded up and billed at 4 GiB regardless.
+  # Azure managed disks instead of the local hostpath provisioner. Minimum
+  # billable size is 4 GiB regardless of what is requested.
   mysql:
-    storage: 4Gi
     storageClass: managed-csi
   mongo:
-    storage: 4Gi
     storageClass: managed-csi
   redis:
-    storage: 4Gi
     storageClass: managed-csi
 
-# "iep-secret" must already exist in the namespace, holding: JWT_SECRET_KEY,
-# SQL_DATABASE_URL, MYSQL_ROOT_PASSWORD, DIRECTOR_EMAIL, DIRECTOR_FORENAME,
-# DIRECTOR_SURNAME, DIRECTOR_PASSWORD.
-#
-# It is produced by the External Secrets Operator, which reads the values from
-# Azure Key Vault and authenticates via workload identity — a federated token,
-# so no credential is stored in git or in the cluster. Rationale and the
-# rejected alternatives are in helm/README.md §7.
-#
-# Stage 2 sets that up. Until it exists, create the Secret by hand once with
-# `kubectl create secret generic iep-secret -n iep --from-literal=...`.
+# "iep-secret" must already exist in the namespace. It is produced by the
+# External Secrets Operator from Azure Key Vault via workload identity — see
+# the secrets section of helm/README.md for the keys it must contain.
 secrets:
   create: false

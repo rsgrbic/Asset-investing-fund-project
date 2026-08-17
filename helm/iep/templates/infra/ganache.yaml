@@ -1,8 +1,4 @@
-{{/*
-In-memory Ethereum testnet for director's voting contract. ganache-cli runs
-without --db, so every restart wipes deployed contracts and balances — hence
-no PVC. Never exposed; ClusterIP only.
-*/}}
+
 {{- if .Values.infra.ganache.enabled }}
 ---
 apiVersion: apps/v1

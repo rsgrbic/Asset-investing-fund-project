@@ -1,0 +1,16 @@
+# Build context is THIS directory (docker build ./auth), so these paths are
+# relative to auth/. Keeps local Python state and dev-only files out of the
+# image layers.
+__pycache__
+*.pyc
+*.pyo
+
+# REST-client scratch files — they contain the demo director login.
+*.http
+
+# Legacy committed SQLite db. The app uses MySQL.
+*.db
+
+# The build recipe itself does not belong in the image.
+dockerfile
+.dockerignore

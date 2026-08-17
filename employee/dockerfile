@@ -6,11 +6,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY employee/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY employee/ ./
+COPY . ./
 EXPOSE 5001
 
 CMD ["gunicorn", "-b", "0.0.0.0:5001", "--access-logfile", "-", "app:create_app()"]

@@ -39,7 +39,7 @@ spec:
                  empty registry contributes literally nothing and the image is
                  just "iep-auth:latest". trimSuffix makes a trailing slash in
                  the value harmless either way. */}}
-          image: "{{ with $.Values.registry }}{{ trimSuffix "/" . }}/{{ end }}{{ $svc.image }}"
+          image: "{{ with $.Values.registry }}{{ trimSuffix "/" . }}/{{ end }}{{ $svc.image.repository }}:{{ $svc.image.tag }}"
           {{- /* Explicit, because Kubernetes defaults this to Always for a
                  :latest tag — which would try to pull local images from Docker
                  Hub and fail. Correct for immutable SHA tags too. */}}
