@@ -1,0 +1,163 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      # 'eth-typing<5' is load-bearing: web3 6.5.0 registers a pytest plugin
+      # (web3.tools.pytest_ethereum) that imports eth_typing.ContractName,
+      # removed in eth-typing 5. Without the pin pytest cannot start at all.
+      # Same pin as test/requirements.txt. Quoted so the shell does not read
+      # '<' as a redirect. pip warns about eth-utils wanting >=5 — expected.
+      - name: Install service dependencies
+        run: pip install pytest 'eth-typing<5' -r auth/requirements.txt -r director/requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/unit -q
+
+  images:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [auth, employee, director]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build only on main pushes.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/iep-${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/iep-${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+
+  chart:
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commits the image tags back to main
+      packages: write
+    # Two merges landing at once would otherwise race on the git push.
+    concurrency:
+      group: main-writeback
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needed to diff against the previous commit; the default shallow
+          # clone has no history to compare with.
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+
+      # Save Chart.yaml's dependencies.
+      - name: Register subchart repos
+        run: |
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+
+      - name: Resolve subcharts from Chart.lock
+        run: helm dependency build ./helm/iep
+
+      - name: Lint
+        run: helm lint ./helm/iep
+
+      # A real API server to validate against.
+      - uses: helm/kind-action@v1
+
+      # `kubectl apply --dry-run=server` validates each object.
+      - name: Validate every env config 
+      # clusterIssuer is emptied because cert-manager's CRDs are not
+      # installed here, so a ClusterIssuer would fail with "no matches for kind"
+        run: |
+          set -euo pipefail
+          kubectl create namespace iep
+          for env in values.yaml values-hosted.yaml; do
+            for scale in small medium large; do
+              echo "checking $env + $scale"
+              # Throwaway values so the Secret template is created.
+              helm template iep ./helm/iep \
+                -f "helm/iep/$env" \
+                -f "helm/iep/scale/$scale.yaml" \
+                --set ingress.clusterIssuer="" \
+                --set secrets.jwtSecretKey=ci \
+                --set secrets.mysqlRootPassword=ci \
+                --set secrets.sqlDatabaseUrl=ci \
+                --set secrets.directorPassword=ci \
+              | kubectl apply -n iep --dry-run=server -f - > /dev/null
+            done
+          done
+
+      # Points values-hosted.yaml at the images the `images` job just pushed.
+      # Commits made with GITHUB_TOKEN do not trigger workflow runs, which is
+      # what stops this looping — that stops being true with a PAT.
+      - name: Pin image tags to this commit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          # All three services share one SHA, so a blanket replace is correct.
+          # sed rather than yq because yq strips blank lines from the file.
+          sed -i 's/^      tag: .*/      tag: ${{ github.sha }}/' helm/iep/values-hosted.yaml
+          changed=$(grep -c '^      tag: ${{ github.sha }}$' helm/iep/values-hosted.yaml)
+          if [ "$changed" -ne 3 ]; then
+            echo "::error::expected 3 image tags, rewrote $changed — check the tag: indentation in values-hosted.yaml"
+            exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- helm/iep/values-hosted.yaml; then
+            echo "::notice::image tags already current"
+          else
+            git commit -m "Setting image tag to the commit SHA -> ${{ github.sha }}" -- helm/iep/values-hosted.yaml
+            git pull --rebase origin main
+            git push
+          fi
+
+      # Editing Chart.yaml is the release signal. No edit, no publish — so a
+      # push that leaves version: alone cannot overwrite a published chart.
+      - name: Did Chart.yaml change?
+        id: chart_changed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qx 'helm/iep/Chart.yaml'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Chart.yaml unchanged — skipping publish. Bump version: in Chart.yaml to release."
+          fi
+
+      - name: Package and push chart
+        if: steps.chart_changed.outputs.changed == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+          helm package ./helm/iep -d dist
+          helm push dist/*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts

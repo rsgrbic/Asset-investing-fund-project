@@ -79,10 +79,11 @@ helm upgrade --install iep ./helm/iep -n iep --create-namespace \
 ## Running it
 
 **Local** — build the images into the cluster's own daemon first, since
-`registry` is empty and `imagePullPolicy` is `IfNotPresent`:
+`registry` is empty and `imagePullPolicy` is `IfNotPresent`. Each service is its
+own build context, so the image names must be given explicitly:
 
 ```bash
-docker compose build
+docker build -t iep-auth:latest ./auth && docker build -t iep-employee:latest ./employee && docker build -t iep-director:latest ./director
 ```
 
 Point the three hostnames at the ingress controller by adding to your hosts file
@@ -104,6 +105,33 @@ helm upgrade --install iep ./helm/iep -n iep --create-namespace -f secrets.local
 helm uninstall iep -n iep && kubectl delete namespace iep
 ```
 
+## Publishing the chart
+
+GHCR is an OCI registry, so no chart repo index or `gh-pages` branch is involved.
+CI does this on every push to `main`; by hand it is:
+
+```bash
+helm registry login ghcr.io -u rsgrbic --password-stdin
+```
+```bash
+helm dependency build ./helm/iep && helm package ./helm/iep -d dist && helm push dist/iep-0.5.0.tgz oci://ghcr.io/rsgrbic/charts
+```
+
+**`helm push` appends the chart name to the URL.** Pushing to
+`oci://ghcr.io/rsgrbic/charts` lands the chart at
+`oci://ghcr.io/rsgrbic/charts/iep:0.5.0`. Putting `iep` in the URL yourself
+produces `.../charts/iep/iep`.
+
+**The tag is `version:` from `Chart.yaml`, never a flag.** Pushing twice without
+bumping it silently overwrites the published chart — so bump `version:` in the
+same commit as any change to `templates/` or `values*.yaml`.
+
+Consume it with:
+
+```bash
+helm install iep oci://ghcr.io/rsgrbic/charts/iep --version 0.5.0 -n iep --create-namespace
+```
+
 ## Values
 
 ### Top level
@@ -116,7 +144,8 @@ helm uninstall iep -n iep && kubectl delete namespace iep
 
 | Key | Description |
 |---|---|
-| `image` | Image name and tag, appended to `registry`. CI rewrites the tag with the git SHA on hosted. |
+| `image.repository` | Image name, appended to `registry`. |
+| `image.tag` | `latest` locally, where images are built straight into the cluster's daemon. On hosted this is the **git SHA**, rewritten and committed by CI on every push to main — do not edit it by hand. |
 | `replicaCount` | Ignored when `autoscaling.enabled` — the template omits `replicas` entirely so the HPA owns the field. |
 | `port` | Container port; the Service and Ingress backend both follow it. |
 | `host` | Ingress hostname for this service. |

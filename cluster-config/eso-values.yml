@@ -1,0 +1,6 @@
+installCRDs: true
+serviceAccount:
+  annotations:
+    azure.workload.identity/client-id: "093dd8f8-a016-435e-96e5-e7a6e03e4724"
+podLabels:
+  azure.workload.identity/use: "true"

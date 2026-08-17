@@ -1,0 +1,11 @@
+# Build context is THIS directory (docker build ./employee), so these paths are
+# relative to employee/.
+__pycache__
+*.pyc
+*.pyo
+
+*.http
+*.db
+
+dockerfile
+.dockerignore

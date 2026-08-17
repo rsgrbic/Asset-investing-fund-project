@@ -1,0 +1,20 @@
+# Build context is THIS directory (docker build ./director), so these paths are
+# relative to director/.
+#
+# NOTE: this dockerfile COPYs app.py and Voting.json explicitly rather than
+# `COPY . ./`, so most of the below is belt-and-braces — it still shrinks the
+# context that gets uploaded to the daemon.
+__pycache__
+*.pyc
+*.pyo
+
+*.http
+
+# Contract SOURCE and the compiler script. Voting.json (the compiled ABI +
+# bytecode) is what the app actually loads at runtime; these two are the
+# build-time tools that produce it and are not needed in the image.
+voting.sol
+compileSol.py
+
+dockerfile
+.dockerignore

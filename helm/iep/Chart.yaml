@@ -4,7 +4,7 @@ description: IEP investment-fund microservices (auth, employee, director) with i
 type: application
 
 # version = the version of THIS CHART. Bump it on every chart change.
-version: 0.5.0
+version: 1.0.0
 
 # appVersion = the version of the APPLICATION. Informational only — image tags
 # are full strings in values, so nothing derives from this.
