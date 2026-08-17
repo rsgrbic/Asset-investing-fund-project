@@ -2,20 +2,17 @@
 # HOSTED — the AKS cluster. Layered on top of values.yaml.
 #
 #   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
-#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/small.yaml
+#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/*.yaml
 #
 # ONLY environment-specific keys belong here — the things that are true because
 # this is Azure. Sizing (replicas, resources, storage) lives in scale/, and
 # anything set here would be silently overridden by it.
 #
-# NOTHING SECRET GOES IN THIS FILE. It is committed to git.
 # =============================================================================
 
 registry: "ghcr.io/rsgrbic"
 
 # image.tag is rewritten by CI on every push to main — never :latest here, an
-# immutable tag is what makes "which commit is running?" answerable.
-# image.repository is inherited from values.yaml.
 services:
   auth:
     host: auth.20.215.101.37.sslip.io
@@ -61,8 +58,6 @@ infra:
   redis:
     storageClass: managed-csi
 
-# "iep-secret" must already exist in the namespace. It is produced by the
-# External Secrets Operator from Azure Key Vault via workload identity — see
-# the secrets section of helm/README.md for the keys it must contain.
+# see helm/README.md
 secrets:
   create: false

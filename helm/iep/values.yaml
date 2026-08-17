@@ -4,15 +4,8 @@
 #   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
 #     -f secrets.local.yaml
 #
-# values-hosted.yaml describes the AKS cluster. It repeats the structure
-# rather than being a sparse patch, so it can be read on its own.
 # =============================================================================
 
-# Prefix applied to every image below. Empty means plain names, which is what
-# locally built images need. No trailing slash — the template adds it, and the
-# check happens once rather than at every use site.
-#   local:  ""                 -> iep-auth:latest
-#   hosted: "iepacr.azurecr.io" -> iepacr.azurecr.io/iep-auth:a3f9c1e
 registry: ""
 
 services:
