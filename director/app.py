@@ -45,7 +45,7 @@ def create_app():
         claims= get_jwt()
         director_role= os.getenv("DIRECTOR_ROLE","director")        
         role= claims.get("role", None)
-        if role is not None and not director_role == role:
+        if role is  None and not director_role == role:
             return jsonify({"msg":"Missing Authorization Header"}), 401
         return None
     

@@ -275,7 +275,7 @@ def create_app():
             "id": asset_id,
             "selling_price": selling_price,
         }
-        redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order))
+        redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order),ex=604800)
         return "", 200
     
     @app.get("/health")

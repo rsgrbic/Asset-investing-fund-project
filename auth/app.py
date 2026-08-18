@@ -39,12 +39,14 @@ def create_app():
         if User.query.filter_by(email="onlymoney@gmail.com").first() is not None:
             return
         user = User(
-        email = os.environ.get("DIRECTOR_EMAIL", "fallback@gmail.com"),
-        password_hash =hash_password( os.environ.get("DIRECTOR_PASSWORD", "fallbackPass")),
-        forename = os.environ.get("DIRECTOR_FORENAME", "fallBackName"),
-        surname = os.environ.get("DIRECTOR_SURNAME", "fallBackSurname"),
+        email = os.environ.get("DIRECTOR_EMAIL", None),
+        password_hash =hash_password( os.environ.get("DIRECTOR_PASSWORD", "fallback")),
+        forename = os.environ.get("DIRECTOR_FORENAME", None),
+        surname = os.environ.get("DIRECTOR_SURNAME", None),
         role=director_role
         )
+        if User.email is None or User.forename is None or User.surname is None:
+             app.logger.error("Environment variables are not present for the initial director seed.")
         db.session.add(user)
         try:
             db.session.commit()

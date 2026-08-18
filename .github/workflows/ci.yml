@@ -139,8 +139,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
-          # All three services share one SHA, so a blanket replace is correct.
-          # sed rather than yq because yq strips blank lines from the file.
+          git pull origin main
           sed -i 's/^      tag: .*/      tag: ${{ github.sha }}/' helm/iep/values-hosted.yaml
           changed=$(grep -c '^      tag: ${{ github.sha }}$' helm/iep/values-hosted.yaml)
           if [ "$changed" -ne 3 ]; then
@@ -153,7 +152,6 @@ jobs:
             echo "::notice::image tags already current"
           else
             git commit -m "Setting image tag to the commit SHA -> ${{ github.sha }}" -- helm/iep/values-hosted.yaml
-            git pull --rebase origin main
             git push
           fi
 
