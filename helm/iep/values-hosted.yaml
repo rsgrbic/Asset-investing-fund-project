@@ -15,15 +15,15 @@ registry: "ghcr.io/rsgrbic"
 # image.tag is rewritten by CI on every push to main — never :latest here, an
 services:
   auth:
-    host: auth.20.215.101.37.sslip.io
+    host: auth.20.215.32.142.sslip.io
     image:
       tag: latest
   employee:
-    host: employee.20.215.101.37.sslip.io
+    host: employee.20.215.32.142.sslip.io
     image:
       tag: latest
   director:
-    host: director.20.215.101.37.sslip.io
+    host: director.20.215.32.142.sslip.io
     image:
       tag: latest
 
@@ -36,6 +36,10 @@ ingress-nginx:
         # 2xx/3xx; ingress-nginx returns 404 there because a probe carries no
         # matching Host header. /healthz answers 200 regardless of Host.
         service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+        # Attach the pre-created static IP from iep-rg instead of letting AKS
+        # allocate (and later garbage-collect) one of its own.
+        service.beta.kubernetes.io/azure-pip-name: LBalancer_IP
+        service.beta.kubernetes.io/azure-load-balancer-resource-group: iep-rg
 
 cert-manager:
   enabled: true
