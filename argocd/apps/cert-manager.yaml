@@ -1,0 +1,32 @@
+# cert-manager as its own Application instead of a subchart of iep.
+#
+# sync-wave -1 puts this ahead of the iep Application, so the CRDs exist before
+# the ClusterIssuer that needs them. That is what removes the two-pass first
+# install ("no matches for kind ClusterIssuer") documented in helm/README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    # Pinned to what Chart.lock already resolved, so nothing changes version
+    # during the migration itself.
+    targetRevision: v1.21.1
+    helm:
+      values: |
+        crds:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: iep
+  syncPolicy:
+    syncOptions:
+      # cert-manager's CRDs exceed the annotation size limit that client-side
+      # apply uses to store the last-applied config.
+      - ServerSideApply=true

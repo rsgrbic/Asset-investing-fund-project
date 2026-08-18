@@ -1,0 +1,27 @@
+# The application chart, sourced from the GIT PATH rather than the published OCI
+# chart: CI commits image tags into values-hosted.yaml, so a git source makes
+# that commit the deploy trigger. An OCI source would need a Chart.yaml bump
+# for every deploy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iep
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsgrbic/Asset-investing-fund-project.git
+    targetRevision: main
+    path: helm/iep
+    helm:
+      valueFiles:
+        - values-hosted.yaml
+        - scale/small.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: iep
+  # MANUAL to start: you read `argocd app diff iep` before anything applies.
+  # Switch to automated once the first sync is boring.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

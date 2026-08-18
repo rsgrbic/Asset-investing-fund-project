@@ -1,0 +1,37 @@
+# The ingress controller as its own Application.
+#
+# NOTE: kubernetes/ingress-nginx reached end of life in March 2026 and the
+# repository is archived — no further security patches. Migrating to Traefik is
+# the next planned change, and having the controller isolated here is what makes
+# that a change to `chart:` and `targetRevision:` rather than a chart rewrite.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes.github.io/ingress-nginx
+    chart: ingress-nginx
+    targetRevision: 4.15.1
+    helm:
+      values: |
+        controller:
+          replicaCount: 1
+          service:
+            type: LoadBalancer
+            annotations:
+              # Azure probes the nodePort with GET / and drops traffic to nodes
+              # that do not answer 2xx/3xx; nginx returns 404 there because a
+              # probe carries no matching Host header.
+              service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+              # The pre-created static IP in iep-rg, so replacing this Service
+              # no longer changes the public address.
+              service.beta.kubernetes.io/azure-pip-name: LBalancer_IP
+              service.beta.kubernetes.io/azure-load-balancer-resource-group: iep-rg
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: iep

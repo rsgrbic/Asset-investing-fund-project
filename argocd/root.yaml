@@ -1,0 +1,23 @@
+# App-of-apps root. Applied by hand once; from then on it watches argocd/apps/
+# and creates an Application for every file it finds there. Adding a component
+# becomes "commit a file", not "run kubectl".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsgrbic/Asset-investing-fund-project.git
+    targetRevision: main
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # The root itself syncs automatically — it only ever creates Applications,
+  # never workloads. The Applications it creates start manual.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
