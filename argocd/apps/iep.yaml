@@ -25,7 +25,6 @@ spec:
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
-  spec:
   ignoreDifferences:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration

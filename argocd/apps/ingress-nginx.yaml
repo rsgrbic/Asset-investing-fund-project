@@ -35,3 +35,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: iep
+  # AKS's `admissionsenforcer` appends namespaceSelector entries so webhooks
+  # cannot intercept AKS-managed namespaces. Git will never contain them, so
+  # without this ArgoCD reverts them and AKS re-adds them, forever.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.namespaceSelector
