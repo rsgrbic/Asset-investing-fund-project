@@ -28,6 +28,7 @@ services:
       tag: 6c0d3e889c9c6d43b9ee1a472a25d6ac40cba083
 
 ingress-nginx:
+  enabled: false
   controller:
     service:
       annotations:
@@ -42,7 +43,7 @@ ingress-nginx:
         service.beta.kubernetes.io/azure-load-balancer-resource-group: iep-rg
 
 cert-manager:
-  enabled: true
+  enabled: false
 
 ingress:
   clusterIssuer: letsencrypt
