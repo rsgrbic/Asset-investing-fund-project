@@ -17,15 +17,15 @@ services:
   auth:
     host: auth.20.215.32.142.sslip.io
     image:
-      tag: 5f8146ca9b38890317edf7252073770169f2017c
+      tag: 38b242a5b86252bd6ab42ae060acc8fb7560c437
   employee:
     host: employee.20.215.32.142.sslip.io
     image:
-      tag: 5f8146ca9b38890317edf7252073770169f2017c
+      tag: 38b242a5b86252bd6ab42ae060acc8fb7560c437
   director:
     host: director.20.215.32.142.sslip.io
     image:
-      tag: 5f8146ca9b38890317edf7252073770169f2017c
+      tag: 38b242a5b86252bd6ab42ae060acc8fb7560c437
 
 ingress-nginx:
   controller:
