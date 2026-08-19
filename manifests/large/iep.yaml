@@ -1,0 +1,711 @@
+---
+# Source: iep/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iep-config
+  labels:
+    app.kubernetes.io/name: iep-config
+    app.kubernetes.io/component: config
+    app.kubernetes.io/part-of: iep
+data:
+  EMPLOYEE_ROLE: "employee"
+  DIRECTOR_ROLE: "director"
+  VOTING_DEADLINE_SECONDS: "3600"
+  MYSQL_DATABASE: "iep_auth"
+  MONGO_URL: "mongodb://mongo:27017"
+  REDIS_URL: "redis://redis:6379/0"
+  GANACHE_URL: "http://ganache:8545"
+
+---
+# Source: iep/templates/infra/storage.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  labels:
+    app.kubernetes.io/name: mysql-data
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/part-of: iep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "managed-csi"
+  resources:
+    requests:
+      storage: "64Gi"
+
+---
+# Source: iep/templates/infra/storage.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-data
+  labels:
+    app.kubernetes.io/name: mongo-data
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/part-of: iep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "managed-csi"
+  resources:
+    requests:
+      storage: "64Gi"
+
+---
+# Source: iep/templates/infra/storage.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  labels:
+    app.kubernetes.io/name: redis-data
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/part-of: iep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "managed-csi"
+  resources:
+    requests:
+      storage: "16Gi"
+
+---
+# Source: iep/templates/app/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth
+  labels:
+    app.kubernetes.io/name: auth
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: auth
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+
+---
+# Source: iep/templates/app/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: director
+  labels:
+    app.kubernetes.io/name: director
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: director
+  ports:
+    - name: http
+      port: 5002
+      targetPort: http
+
+---
+# Source: iep/templates/app/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: employee
+  labels:
+    app.kubernetes.io/name: employee
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: employee
+  ports:
+    - name: http
+      port: 5001
+      targetPort: http
+
+---
+# Source: iep/templates/infra/ganache.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ganache
+  labels:
+    app.kubernetes.io/name: ganache
+    app.kubernetes.io/component: blockchain
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: ganache
+  ports:
+    - name: rpc
+      port: 8545
+      targetPort: rpc
+
+---
+# Source: iep/templates/infra/mongo.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: mongo
+
+---
+# Source: iep/templates/infra/mysql.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+
+---
+# Source: iep/templates/infra/redis.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+
+---
+# Source: iep/templates/app/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  labels:
+    app.kubernetes.io/name: auth
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  selector:
+    matchLabels:
+      app: auth # immutable — changing it needs a delete + recreate
+  template:
+    metadata:
+      labels:
+        app: auth # must match the selector above
+        app.kubernetes.io/name: auth
+        app.kubernetes.io/component: microservice
+        app.kubernetes.io/part-of: iep
+      annotations:
+        checksum/config: acf479041843eef1c1f1d5c1e9d2e73de89ce1d8e2484b9527b738d47680cbc9
+    spec:
+      containers:
+        - name: auth
+          image: "ghcr.io/rsgrbic/iep-auth:98d755f62690477006a76d492a252a7329824431"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: iep-config
+            - secretRef:
+                name: iep-secret
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+
+---
+# Source: iep/templates/app/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: director
+  labels:
+    app.kubernetes.io/name: director
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: director # immutable — changing it needs a delete + recreate
+  template:
+    metadata:
+      labels:
+        app: director # must match the selector above
+        app.kubernetes.io/name: director
+        app.kubernetes.io/component: microservice
+        app.kubernetes.io/part-of: iep
+      annotations:
+        checksum/config: acf479041843eef1c1f1d5c1e9d2e73de89ce1d8e2484b9527b738d47680cbc9
+    spec:
+      containers:
+        - name: director
+          image: "ghcr.io/rsgrbic/iep-director:98d755f62690477006a76d492a252a7329824431"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5002
+          envFrom:
+            - configMapRef:
+                name: iep-config
+            - secretRef:
+                name: iep-secret
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 1500m
+              memory: 1Gi
+            requests:
+              cpu: 300m
+              memory: 384Mi
+
+---
+# Source: iep/templates/app/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: employee
+  labels:
+    app.kubernetes.io/name: employee
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  selector:
+    matchLabels:
+      app: employee # immutable — changing it needs a delete + recreate
+  template:
+    metadata:
+      labels:
+        app: employee # must match the selector above
+        app.kubernetes.io/name: employee
+        app.kubernetes.io/component: microservice
+        app.kubernetes.io/part-of: iep
+      annotations:
+        checksum/config: acf479041843eef1c1f1d5c1e9d2e73de89ce1d8e2484b9527b738d47680cbc9
+    spec:
+      containers:
+        - name: employee
+          image: "ghcr.io/rsgrbic/iep-employee:98d755f62690477006a76d492a252a7329824431"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5001
+          envFrom:
+            - configMapRef:
+                name: iep-config
+            - secretRef:
+                name: iep-secret
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+            requests:
+              cpu: 200m
+              memory: 256Mi
+
+---
+# Source: iep/templates/infra/ganache.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ganache
+  labels:
+    app.kubernetes.io/name: ganache
+    app.kubernetes.io/component: blockchain
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ganache
+  template:
+    metadata:
+      labels:
+        app: ganache
+        app.kubernetes.io/name: ganache
+        app.kubernetes.io/component: blockchain
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: ganache
+          image: "trufflesuite/ganache-cli:latest"
+          args:
+            - --host=0.0.0.0
+            - --port=8545
+            - --gasLimit=1e+07
+            - --accounts=10
+            - --defaultBalanceEther=10000
+          ports:
+            - name: rpc
+              containerPort: 8545
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "node -e \"const http=require('http');const r=http.request({hostname:'localhost',port:8545,method:'POST',headers:{'Content-Type':'application/json'}},res=>{process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.write(JSON.stringify({jsonrpc:'2.0',method:'eth_blockNumber',params:[],id:1}));r.end()\""
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 768Mi
+            requests:
+              cpu: 50m
+              memory: 192Mi
+
+---
+# Source: iep/templates/infra/mongo.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+        app.kubernetes.io/name: mongo
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: mongo
+          image: "mongo:6"
+          ports:
+            - name: mongo
+              containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 6Gi
+            requests:
+              cpu: 500m
+              memory: 2Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mongo-data
+
+---
+# Source: iep/templates/infra/mysql.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: mysql
+          image: "mysql:8.0"
+          ports:
+            - name: mysql
+              containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: iep-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: iep-config
+                  key: MYSQL_DATABASE
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 6Gi
+            requests:
+              cpu: 500m
+              memory: 2Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mysql-data
+
+---
+# Source: iep/templates/infra/redis.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: redis
+          image: "redis:7-alpine"
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data
+
+---
+# Source: iep/templates/app/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth
+  labels:
+    app.kubernetes.io/name: auth
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+
+---
+# Source: iep/templates/app/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: employee
+  labels:
+    app.kubernetes.io/name: employee
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: iep
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: employee
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+
+---
+# Source: iep/templates/app/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iep
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: iep
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt"
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+spec:
+  ingressClassName: "nginx"
+  tls:
+    - hosts:
+        - "auth.20.215.32.142.sslip.io"
+        - "director.20.215.32.142.sslip.io"
+        - "employee.20.215.32.142.sslip.io"
+      secretName: iep-tls
+  rules:
+    - host: "auth.20.215.32.142.sslip.io"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: auth
+                port:
+                  name: http
+    - host: "director.20.215.32.142.sslip.io"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: director
+                port:
+                  name: http
+    - host: "employee.20.215.32.142.sslip.io"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: employee
+                port:
+                  name: http
+
+---
+# Source: iep/templates/app/clusterissuer.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+  labels:
+    app.kubernetes.io/name: letsencrypt
+    app.kubernetes.io/component: tls
+    app.kubernetes.io/part-of: iep
+spec:
+  acme:
+    server: "https://acme-v02.api.letsencrypt.org/directory"
+    email: "ga210363d@student.etf.bg.ac.rs"
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: "nginx"
