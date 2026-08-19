@@ -12,7 +12,10 @@ spec:
   source:
     repoURL: https://github.com/rsgrbic/Asset-investing-fund-project.git
     targetRevision: deploy
-    path: manifests
+    # `path:` selects the scale profile. CI renders all three; swap this for
+    # manifests/medium or manifests/large to scale up. PVCs cannot shrink, so
+    # scaling back down needs the volumes deleted first.
+    path: manifests/small
   destination:
     server: https://kubernetes.default.svc
     namespace: iep

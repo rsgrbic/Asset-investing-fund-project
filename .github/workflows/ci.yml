@@ -146,20 +146,23 @@ jobs:
           path: deploy-branch
 
       # The SHA reaches the cluster only through this render. No values file
-      # stores it, so none of them can go stale.
+      # stores it, so none of them can go stale. All three scale profiles are
+      # rendered; argocd/apps/iep.yaml picks one with `path:`.
       - name: Render manifests
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
-          mkdir -p deploy-branch/manifests
-          helm template iep ./helm/iep \
-            -n iep \
-            -f helm/iep/values-hosted.yaml \
-            -f helm/iep/scale/small.yaml \
-            --set services.auth.image.tag=${{ github.sha }} \
-            --set services.employee.image.tag=${{ github.sha }} \
-            --set services.director.image.tag=${{ github.sha }} \
-            > deploy-branch/manifests/iep.yaml
+          for scale in small medium large; do
+            mkdir -p "deploy-branch/manifests/$scale"
+            helm template iep ./helm/iep \
+              -n iep \
+              -f helm/iep/values-hosted.yaml \
+              -f "helm/iep/scale/$scale.yaml" \
+              --set services.auth.image.tag=${{ github.sha }} \
+              --set services.employee.image.tag=${{ github.sha }} \
+              --set services.director.image.tag=${{ github.sha }} \
+              > "deploy-branch/manifests/$scale/iep.yaml"
+          done
 
       - name: Publish to the deploy branch
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -168,10 +171,12 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- manifests/iep.yaml; then
+          # Stage before comparing: `git diff` ignores untracked files, so on the
+          # first render it would report "no change" and push nothing.
+          git add manifests
+          if git diff --cached --quiet; then
             echo "::notice::rendered output unchanged"
           else
-            git add manifests/iep.yaml
             git commit -m "Render ${{ github.sha }}"
             git push
           fi
