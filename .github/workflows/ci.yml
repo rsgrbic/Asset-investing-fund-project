@@ -132,26 +132,47 @@ jobs:
             done
           done
 
-      # Points values-hosted.yaml at the images the `images` job just pushed.
+      # Renders the chart and commits the OUTPUT to `deploy`, the branch ArgoCD
+      # watches. main never receives a bot commit, and because each run starts
+      # from the tip of `deploy` there is nothing to rebase — which is what two
+      # near-simultaneous pushes used to conflict on.
       # Commits made with GITHUB_TOKEN do not trigger workflow runs, which is
       # what stops this looping — that stops being true with a PAT.
-      - name: Pin image tags to this commit
+      - name: Check out the deploy branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/checkout@v4
+        with:
+          ref: deploy
+          path: deploy-branch
+
+      # The SHA reaches the cluster only through this render. No values file
+      # stores it, so none of them can go stale.
+      - name: Render manifests
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
-          git pull origin main
-          sed -i 's/^      tag: .*/      tag: ${{ github.sha }}/' helm/iep/values-hosted.yaml
-          changed=$(grep -c '^      tag: ${{ github.sha }}$' helm/iep/values-hosted.yaml)
-          if [ "$changed" -ne 3 ]; then
-            echo "::error::expected 3 image tags, rewrote $changed — check the tag: indentation in values-hosted.yaml"
-            exit 1
-          fi
+          mkdir -p deploy-branch/manifests
+          helm template iep ./helm/iep \
+            -n iep \
+            -f helm/iep/values-hosted.yaml \
+            -f helm/iep/scale/small.yaml \
+            --set services.auth.image.tag=${{ github.sha }} \
+            --set services.employee.image.tag=${{ github.sha }} \
+            --set services.director.image.tag=${{ github.sha }} \
+            > deploy-branch/manifests/iep.yaml
+
+      - name: Publish to the deploy branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: deploy-branch
+        run: |
+          set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- helm/iep/values-hosted.yaml; then
-            echo "::notice::image tags already current"
+          if git diff --quiet -- manifests/iep.yaml; then
+            echo "::notice::rendered output unchanged"
           else
-            git commit -m "Setting image tag to the commit SHA -> ${{ github.sha }}" -- helm/iep/values-hosted.yaml
+            git add manifests/iep.yaml
+            git commit -m "Render ${{ github.sha }}"
             git push
           fi
 

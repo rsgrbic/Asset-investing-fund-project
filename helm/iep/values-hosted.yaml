@@ -12,20 +12,22 @@
 
 registry: "ghcr.io/rsgrbic"
 
-# image.tag is rewritten by CI on every push to main — never :latest here, an
+# image.tag is supplied by CI at render time (`helm template --set`), never
+# stored here. The tag that is actually deployed lives in the rendered output on
+# the deploy branch, so a value in this file could only ever be stale.
 services:
   auth:
     host: auth.20.215.32.142.sslip.io
     image:
-      tag: b4ec216da7f1b6b9906d526c61d68ce8d16392c7
+      tag: SET-BY-CI
   employee:
     host: employee.20.215.32.142.sslip.io
     image:
-      tag: b4ec216da7f1b6b9906d526c61d68ce8d16392c7
+      tag: SET-BY-CI
   director:
     host: director.20.215.32.142.sslip.io
     image:
-      tag: b4ec216da7f1b6b9906d526c61d68ce8d16392c7
+      tag: SET-BY-CI
 
 ingress-nginx:
   enabled: false
