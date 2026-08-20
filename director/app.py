@@ -1,6 +1,6 @@
 from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager,get_jwt,verify_jwt_in_request
-from pymongo import MongoClient
+from pymongo import MongoClient, monitoring
 from collections import defaultdict
 import os
 from redis import Redis
@@ -15,6 +15,77 @@ import time
 
 from bson import ObjectId
 from bson.errors import InvalidId
+
+from prometheus_client import Counter, Gauge, Histogram
+from prometheus_flask_exporter import PrometheusMetrics
+
+# Module scope, not create_app(): a second create_app() call would otherwise
+# register the same metric name twice and raise.
+VOTING_THREADS = Gauge(
+    "iep_voting_threads_active",
+    "Vote watcher threads alive in this process",
+)
+# A vote runs until VOTING_DEADLINE_SECONDS (3600).
+VOTING_DURATION = Histogram(
+    "iep_voting_duration_seconds",
+    "Seconds from vote start to the Finalized event",
+    buckets=(1, 5, 15, 30, 60, 120, 300, 900, 3600),
+)
+VOTING_OUTCOME = Counter(
+    "iep_voting_outcome_total",
+    "How a vote ended",
+    ["outcome"],
+)
+PENDING_ORDERS = Gauge("iep_pending_orders", "Orders waiting in Redis")
+ASSETS_VALUE = Gauge("iep_assets_value", "Money per category", ["category", "kind"])
+
+DB_OPS = Counter(
+    "iep_db_operations_total",
+    "Database calls made by this service",
+    ["backend", "operation", "result"],
+)
+DB_DURATION = Histogram(
+    "iep_db_operation_duration_seconds",
+    "Database call latency",
+    ["backend", "operation"],
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5),
+)
+
+
+class _MongoMetrics(monitoring.CommandListener):
+    """Tracks Mongo commands. pymongo provides a base class."""
+
+    def started(self, event):
+        pass
+
+    def succeeded(self, event):
+        DB_OPS.labels("mongo", event.command_name, "ok").inc()
+        DB_DURATION.labels("mongo", event.command_name).observe(event.duration_micros / 1e6)
+
+    def failed(self, event):
+        DB_OPS.labels("mongo", event.command_name, "error").inc()
+
+
+# Process-wide, so every MongoClient is covered. Registered at module scope:
+# a second create_app() call would otherwise add a second listener and the
+# counts would double.
+monitoring.register(_MongoMetrics())
+
+
+class _MeteredRedis(Redis):
+    """Superclass that wraps Redis client to measure operations."""
+
+    def execute_command(self, *args, **kwargs):
+        op = args[0] if args else "unknown"
+        start = time.perf_counter()
+        try:
+            result = super().execute_command(*args, **kwargs)
+        except Exception:
+            DB_OPS.labels("redis", op, "error").inc()
+            raise
+        DB_OPS.labels("redis", op, "ok").inc()
+        DB_DURATION.labels("redis", op).observe(time.perf_counter() - start)
+        return result
 
 def _is_valid_uuid(value):
     if not isinstance(value, str):
@@ -42,10 +113,12 @@ def create_app():
         except Exception:
             return jsonify({"msg":"Missing Authorization Header"}), 401
         
-        claims= get_jwt()
-        director_role= os.getenv("DIRECTOR_ROLE","director")        
-        role= claims.get("role", None)
-        if role is  None and not director_role == role:
+        claims = get_jwt()
+        director_role = os.getenv("DIRECTOR_ROLE", "director")
+        role = claims.get("role")
+        if role is None:
+            return jsonify({"msg":"Missing Authorization Header"}), 401
+        if role != director_role:
             return jsonify({"msg":"Missing Authorization Header"}), 401
         return None
     
@@ -150,31 +223,62 @@ def create_app():
         try:
             event_filter = instace.events.Finalized.create_filter(fromBlock="latest")
         except Exception:
+            VOTING_OUTCOME.labels(outcome="events_filter_error").inc()
             return
-        
+
         deadline = time.time() + int(os.environ.get("VOTING_DEADLINE_SECONDS",3600)) # 1 Hour to finalzie
-        while time.time() < deadline:
-            try:
-                for event in event_filter.get_new_entries():
-                    _finalize_order(order_uuid, bool(event["args"]["approved"]))
-                    return
-            except Exception:
-                pass
-            time.sleep(0.5)
+        started = time.time()
+        # try/finally, so a thread that dies early still releases the gauge.
+        VOTING_THREADS.inc()
+        try:
+            while time.time() < deadline:
+                try:
+                    for event in event_filter.get_new_entries():
+                        approved = bool(event["args"]["approved"])
+                        _finalize_order(order_uuid, approved)
+                        VOTING_DURATION.observe(time.time() - started)
+                        VOTING_OUTCOME.labels(
+                            outcome="approved" if approved else "rejected"
+                        ).inc()
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            # Reached only when the deadline passed with no Finalized event.
+            VOTING_OUTCOME.labels(outcome="timeout").inc()
+        finally:
+            VOTING_THREADS.dec()
     
     # Locals
     
     app = Flask(__name__)
     app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY","HARDCODED")
     JWTManager(app)
+
+    # Adds /metrics and RED metrics per route.
+    PrometheusMetrics(app)
     
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
     mongo_client = MongoClient(mongo_url)
     assets_collection= mongo_client["investment_fund"]["assets"]
     
     redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-    redis_client = Redis.from_url(redis_url, decode_responses=True)
+    redis_client = _MeteredRedis.from_url(redis_url, decode_responses=True)
     PENDING_ORDER_PREFIX = "pending_order:"
+
+    _pending_last = {"value": 0.0}
+
+    def _count_pending_orders():
+        """"Counts pending orders in redis once /metrics is called."""
+        try:
+            _pending_last["value"] = float(
+                sum(1 for _ in redis_client.scan_iter(match=f"{PENDING_ORDER_PREFIX}*"))
+            )
+        except Exception:
+            pass
+        return _pending_last["value"]
+
+    PENDING_ORDERS.set_function(_count_pending_orders)
     
     ganache_url= os.environ.get("GANACHE_URL","http://ganache:8545") #EDIT
     web3_client= Web3(Web3.HTTPProvider(ganache_url,request_kwargs={"timeout":5}))
@@ -215,6 +319,14 @@ def create_app():
             for category in all_categories
         ]
         statistics.sort(key= lambda sort: (-sort["earned"],sort["spent"],sort["category"]))
+
+        # clear() first: a category that disappears would otherwise keep
+        # reporting its last value forever.
+        ASSETS_VALUE.clear()
+        for row in statistics:
+            ASSETS_VALUE.labels(category=row["category"], kind="spent").set(row["spent"])
+            ASSETS_VALUE.labels(category=row["category"], kind="earned").set(row["earned"])
+
         return jsonify({"statistics":statistics}),200
     
     @app.get("/health")
@@ -250,7 +362,7 @@ def create_app():
                 formatted["id"] = order.get("id")
                 formatted["selling_price"] = order.get("selling_price")
             orders.append(formatted)
-            
+
         return jsonify({"orders":orders}),200
         
     @app.post("/decision")

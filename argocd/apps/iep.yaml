@@ -19,8 +19,10 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: iep
-  # MANUAL to start: you read `argocd app diff iep` before anything applies.
-  # Switch to automated once the first sync is boring.
+  # Switched to automated once the first sync completed.
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+    automated:
+      prune: true
+      selfHeal: true

@@ -8,6 +8,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from prometheus_client import REGISTRY
+from prometheus_client.metrics import MetricWrapperBase
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -24,6 +27,23 @@ def _load(module_name: str, service: str, filename: str):
     return module
 
 
+def _unregister_metrics(module):
+    """Drop this module's metrics from the process-wide registry.
+
+    Each service defines the same metric names at module scope. That is fine in
+    production, where every service is its own process. Here two services share
+    one process, so the second load would fail with DuplicateTimeseries.
+    """
+    for value in vars(module).values():
+        if isinstance(value, MetricWrapperBase):
+            try:
+                REGISTRY.unregister(value)
+            except KeyError:
+                pass
+
+
 auth_models = _load("iep_auth_models", "auth", "models.py")
 auth_app = _load("iep_auth_app", "auth", "app.py")
+_unregister_metrics(auth_app)
 director_app = _load("iep_director_app", "director", "app.py")
+_unregister_metrics(director_app)

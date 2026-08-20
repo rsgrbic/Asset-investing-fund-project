@@ -1,0 +1,34 @@
+{{/*
+One ServiceMonitor for all three microservices. The Services already share
+`part-of: iep` and `component: microservice`, so a label selector covers them
+without naming each one.
+
+Requires the Prometheus Operator CRDs. argocd/apps/monitoring.yaml runs at
+sync-wave -1 for that reason. Gated by monitoring.enabled so a cluster without
+the operator can still install this chart.
+*/}}
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: iep-microservices
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: servicemonitor
+    app.kubernetes.io/part-of: iep
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: iep
+      app.kubernetes.io/component: microservice
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    # By port NAME, not number. The three services listen on 5000, 5001 and
+    # 5002, and all three name that port `http`.
+    - port: http
+      path: {{ .Values.monitoring.path | quote }}
+      interval: {{ .Values.monitoring.interval | quote }}
+      scrapeTimeout: {{ .Values.monitoring.scrapeTimeout | quote }}
+{{- end }}

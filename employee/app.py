@@ -1,7 +1,8 @@
 from flask import Flask, jsonify, request
 import os
 import re
-from pymongo import MongoClient
+import time
+from pymongo import MongoClient, monitoring
 from datetime import datetime,timezone
 from flask_jwt_extended import JWTManager, verify_jwt_in_request
 import uuid
@@ -10,6 +11,55 @@ import json
 
 from bson import ObjectId
 from bson.errors import InvalidId
+
+from prometheus_client import Counter, Histogram
+from prometheus_flask_exporter import PrometheusMetrics
+
+DB_OPS = Counter(
+    "iep_db_operations_total",
+    "Database calls made by this service",
+    ["backend", "operation", "result"],
+)
+DB_DURATION = Histogram(
+    "iep_db_operation_duration_seconds",
+    "Database call latency",
+    ["backend", "operation"],
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5),
+)
+
+
+class _MongoMetrics(monitoring.CommandListener):
+    """Tracks Mongo commands. pymongo provides a base class."""
+
+    def started(self, event):
+        pass
+
+    def succeeded(self, event):
+        DB_OPS.labels("mongo", event.command_name, "ok").inc()
+        DB_DURATION.labels("mongo", event.command_name).observe(event.duration_micros / 1e6)
+
+    def failed(self, event):
+        DB_OPS.labels("mongo", event.command_name, "error").inc()
+
+
+# Module level register
+monitoring.register(_MongoMetrics())
+
+
+class _MeteredRedis(Redis):
+    """Superclass that wraps Redis client to measure operations."""
+
+    def execute_command(self, *args, **kwargs):
+        op = args[0] if args else "unknown"
+        start = time.perf_counter()
+        try:
+            result = super().execute_command(*args, **kwargs)
+        except Exception:
+            DB_OPS.labels("redis", op, "error").inc()
+            raise
+        DB_OPS.labels("redis", op, "ok").inc()
+        DB_DURATION.labels("redis", op).observe(time.perf_counter() - start)
+        return result
 
 def _make_mongo_client(url:str):
     return MongoClient(url)
@@ -55,6 +105,10 @@ def create_app():
     app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY","HARDCODED")
     JWTManager(app)
 
+    # Adds /metrics and RED metrics per route. Custom Mongo attribution
+    # metrics land here in phase 3.
+    PrometheusMetrics(app)
+
 
     # Fallback to local mongo
     mongo_url = os.environ.get("MONGO_URL", "mongodb://mongo:27017")
@@ -62,7 +116,7 @@ def create_app():
     assets_collection = mongo_client["investment_fund"]["assets"]
     
     redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-    redis_client = Redis.from_url(redis_url, decode_responses=True)
+    redis_client = _MeteredRedis.from_url(redis_url, decode_responses=True)
     PENDING_ORDER_PREFIX = "pending_order:"
 
 

@@ -3,4 +3,5 @@ Flask-JWT-Extended>=4.6,<4.7
 pymongo>=4.7,<5.0
 redis>=8.0
 gunicorn>=22.0,<23.0
+prometheus-flask-exporter>=0.23,<0.24
 setuptools<80

@@ -139,6 +139,20 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
 
+# ---- Prometheus scraping -----------------------------------------------------
+# Off locally: templates/servicemonitor.yaml renders a CRD that a plain kind or
+# minikube cluster does not have, and the apply fails with "no matches for
+# kind". Turn it on only where the Prometheus Operator runs.
+monitoring:
+  enabled: false
+  # prometheus-flask-exporter serves this on the same port the app listens on.
+  # TODO: block this path at the ingress. `/` is routed to each service, so the
+  # metrics are reachable on the public host today.
+  path: /metrics
+  interval: 30s
+  # Must stay below interval, or the operator rejects the object.
+  scrapeTimeout: 10s
+
 # Non-secret env, injected into all three services.
 env:
   EMPLOYEE_ROLE: employee

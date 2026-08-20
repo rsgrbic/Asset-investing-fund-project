@@ -47,6 +47,10 @@ ingress-nginx:
 cert-manager:
   enabled: false
 
+# kube-prometheus-stack runs here, so the CRDs exist.
+monitoring:
+  enabled: true
+
 ingress:
   clusterIssuer: letsencrypt
   acmeEmail: "ga210363d@student.etf.bg.ac.rs"

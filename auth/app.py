@@ -2,12 +2,58 @@ from __future__ import annotations
 
 from datetime import timedelta
 import os
+import time
 from email_validator import EmailNotValidError, validate_email
 from flask import Flask, jsonify, request
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, verify_jwt_in_request
 
 from models import User ,db, hash_password, verify_password
+
+from prometheus_client import Counter, Histogram
+from prometheus_flask_exporter import PrometheusMetrics
+
+# Module scope: create_app() may run more than once, and a duplicate
+# registration raises.
+LOGIN_TOTAL = Counter("iep_login_total", "Login attempts by result", ["result"])
+DB_OPS = Counter(
+    "iep_db_operations_total",
+    "Database calls made by this service",
+    ["backend", "operation", "result"],
+)
+DB_DURATION = Histogram(
+    "iep_db_operation_duration_seconds",
+    "Database call latency",
+    ["backend", "operation"],
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5),
+)
+
+
+# Listen on the Engine CLASS, not an instance: Flask-SQLAlchemy builds the
+# engine inside db.init_app(), so no instance exists at import time.
+# Module scope, because registering twice fires the listener twice.
+@event.listens_for(Engine, "before_cursor_execute")
+def _sql_start(conn, cursor, statement, *args):
+    # conn.info survives between the two events, so the start time has a home.
+    conn.info["_iep_t0"] = time.perf_counter()
+
+
+@event.listens_for(Engine, "after_cursor_execute")
+def _sql_end(conn, cursor, statement, *args):
+    started = conn.info.pop("_iep_t0", None)
+    operation = statement.split(None, 1)[0].upper() if statement else "UNKNOWN"
+    DB_OPS.labels("mysql", operation, "ok").inc()
+    if started is not None:
+        DB_DURATION.labels("mysql", operation).observe(time.perf_counter() - started)
+
+
+@event.listens_for(Engine, "handle_error")
+def _sql_error(context):
+    statement = context.statement or ""
+    operation = statement.split(None, 1)[0].upper() if statement else "UNKNOWN"
+    DB_OPS.labels("mysql", operation, "error").inc()
 
 basedir= os.path.abspath(os.path.dirname(__file__))
 def _is_valid_email(email):
@@ -67,6 +113,9 @@ def create_app():
     app.config["JWT_ALGORITHM"] = "HS256"
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
     JWTManager(app)
+
+    # Adds /metrics and RED metrics per route.
+    PrometheusMetrics(app)
 
     db.init_app(app)
     with app.app_context():
@@ -128,17 +177,23 @@ def create_app():
 
         email= _get_str(data,"email")
         if email is None:
+            LOGIN_TOTAL.labels(result="bad_request").inc()
             return jsonify({"message":"Field email is missing."}),400
 
         password = _get_str(data, "password")
         if password is None:
+            LOGIN_TOTAL.labels(result="bad_request").inc()
             return jsonify({"message": "Field password is missing."}), 400
 
         if not _is_valid_email(email):
+            LOGIN_TOTAL.labels(result="bad_request").inc()
             return jsonify({"message": "Invalid email."}), 400
         
         user = User.query.filter_by(email=email).first()
         if user is None or not verify_password(password,user.password_hash):
+            # One label for both cases. Splitting them would leak which
+            # addresses exist.
+            LOGIN_TOTAL.labels(result="invalid_credentials").inc()
             return jsonify ({"message":"Invalid credentials."}), 400
         
         additional_claims ={
@@ -148,6 +203,7 @@ def create_app():
         }
 
         token = create_access_token(identity=email,additional_claims=additional_claims)
+        LOGIN_TOTAL.labels(result="success").inc()
         return jsonify({"accessToken":token}), 200
 
     @app.post("/delete")
