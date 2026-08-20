@@ -230,7 +230,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:c1450534e577f6591f0f4030b7d2bc10c9acc4a4"
+          image: "ghcr.io/rsgrbic/iep-auth:626784dd7d0ca51e6b5a83cd02b8ea45fa20ffab"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -285,7 +285,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:c1450534e577f6591f0f4030b7d2bc10c9acc4a4"
+          image: "ghcr.io/rsgrbic/iep-director:626784dd7d0ca51e6b5a83cd02b8ea45fa20ffab"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -339,7 +339,7 @@ spec:
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:c1450534e577f6591f0f4030b7d2bc10c9acc4a4"
+          image: "ghcr.io/rsgrbic/iep-employee:626784dd7d0ca51e6b5a83cd02b8ea45fa20ffab"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -709,3 +709,29 @@ spec:
       - http01:
           ingress:
             ingressClassName: "nginx"
+
+---
+# Source: iep/templates/servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: iep-microservices
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: servicemonitor
+    app.kubernetes.io/part-of: iep
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: iep
+      app.kubernetes.io/component: microservice
+  namespaceSelector:
+    matchNames:
+      - iep
+  endpoints:
+    # By port NAME, not number. The three services listen on 5000, 5001 and
+    # 5002, and all three name that port `http`.
+    - port: http
+      path: "/metrics"
+      interval: "30s"
+      scrapeTimeout: "10s"
