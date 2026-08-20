@@ -1,0 +1,104 @@
+# kube-prometheus-stack: Prometheus Operator + Prometheus + Alertmanager +
+# Grafana + node-exporter + kube-state-metrics.
+#
+# sync-wave -1 puts this ahead of the iep Application, so the ServiceMonitor and
+# PrometheusRule CRDs exist before the chart renders any. Same ordering problem
+# cert-manager's CRDs already solved.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iep-monitoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 88.5.0
+    helm:
+      values: |
+        prometheus:
+          prometheusSpec:
+            # Both default to true, which restricts the operator to objects
+            # carrying its own release label. Our ServiceMonitors come from the
+            # iep chart and would be ignored with no error anywhere.
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            # Both caps matter on a single node: whichever is hit first wins. 
+            retention: 7d
+            retentionSize: 8GB
+            resources:
+              requests: { cpu: 100m, memory: 1Gi }
+              limits: { cpu: 1000m, memory: 2Gi }
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: managed-csi
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 10Gi
+
+        # AKS manages the control plane, so none of these are scrapeable. Left
+        # enabled they become permanently-down targets and fire their default
+        # alerts forever.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        defaultRules:
+          rules:
+            kubeControllerManager: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: false
+            etcd: false
+            kubeProxy: false
+
+        alertmanager:
+          alertmanagerSpec:
+            resources:
+              requests: { cpu: 10m, memory: 64Mi }
+              limits: { cpu: 200m, memory: 256Mi }
+
+        grafana:
+          # Password comes from Key Vault via ESO — see cluster-config/eso-secrets.yaml.
+          # This secret must exist before the pod starts or it stays in CreateContainerConfigError.
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          resources:
+            requests: { cpu: 10m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            annotations:
+              # The ClusterIssuer is created by the iep chart at wave 0, i.e.
+              # after this. cert-manager retries, so the cert appears a minute
+              # late on a from-zero install rather than failing.
+              cert-manager.io/cluster-issuer: letsencrypt
+            hosts:
+              - grafana.20.215.32.142.sslip.io
+            tls:
+              - secretName: grafana-tls
+                hosts:
+                  - grafana.20.215.32.142.sslip.io
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    syncOptions:
+      # The monitoring namespace does not exist yet. Without this the sync fails
+      # before creating anything.
+      - CreateNamespace=true
+      # The Prometheus and Alertmanager CRDs exceed the annotation size limit
+      # client-side apply uses to store last-applied config.
+      - ServerSideApply=true
