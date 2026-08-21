@@ -21,6 +21,13 @@ spec:
       values: |
         controller:
           replicaCount: 1
+          # Off by default. Turning it on adds a second Service on port 10254
+          # and lets the chart create its own ServiceMonitor, so Prometheus
+          # sees edge traffic without the apps taking part.
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           service:
             type: LoadBalancer
             annotations:

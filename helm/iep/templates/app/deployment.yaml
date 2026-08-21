@@ -14,6 +14,10 @@ spec:
   {{- if not $svc.autoscaling.enabled }}
   replicas: {{ $svc.replicaCount }}
   {{- end }}
+  {{- /* Default is 10. Rollback here means reverting the commit and letting
+         ArgoCD sync, not `kubectl rollout undo`, so old ReplicaSets have no
+         job beyond taking up space. */}}
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: {{ $name }} # immutable — changing it needs a delete + recreate

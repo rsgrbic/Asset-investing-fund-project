@@ -1,0 +1,29 @@
+# ArgoCD's own metrics. ArgoCD is not managed by a chart in this repo, so this
+# is applied by hand like the other files here.
+#
+# One object covers every component. All the metrics Services carry
+# `part-of: argocd`, and `port: metrics` selects by port NAME, so a Service
+# without such a port produces no target and needs no exclusion.
+#
+#   argocd-metrics         :8082  application controller — argocd_app_info,
+#                                 sync and reconcile histograms
+#   argocd-server-metrics  :8083  API server
+#   argocd-repo-server     :8084  git fetch and manifest render timings
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: argocd
+  namespaceSelector:
+    matchNames:
+      - argocd
+  endpoints:
+    - port: metrics
+      interval: 30s
+      scrapeTimeout: 10s

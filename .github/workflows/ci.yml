@@ -71,7 +71,7 @@ jobs:
           cache-to: type=gha,mode=max
 
 
-  chart:
+  render-manifests/publish-chart:
     needs: images
     runs-on: ubuntu-latest
     permissions:
