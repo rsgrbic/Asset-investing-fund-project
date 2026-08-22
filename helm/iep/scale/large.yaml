@@ -78,7 +78,7 @@ infra:
       requests: { cpu: 500m, memory: 2Gi }
       limits: { cpu: 2000m, memory: 6Gi }
   redis:
-    maxmemory: 1024mib
+    maxmemory: 1024mb
     storage: 16Gi
     resources:
       requests: { cpu: 250m, memory: 512Mi }

@@ -209,10 +209,11 @@ infra:
     # thumb for a Redis with a forking rewrite, not a calculation: maxmemory
     # bounds the dataset, while fragmentation and the AOF-rewrite fork are
     # outside it and cannot be predicted before measuring.
-    # `mib` because Redis reads `mb` as 1000000 bytes and Kubernetes `Mi` as
-    # 1048576 — matching units keeps the 50% exact.
+    # Redis `mb` is 1024-based, the same as Kubernetes `Mi`, so these numbers
+    # compare directly with the limits above. Redis has no `mib` suffix, and
+    # its lowercase `m` means 1000000 bytes.
     # Overridden per profile in scale/*.yaml, because the limit changes there.
-    maxmemory: 128mib
+    maxmemory: 128mb
     # Never an LRU policy here. Redis holds the order queue, so eviction would
     # delete pending orders silently.
     maxmemoryPolicy: noeviction
