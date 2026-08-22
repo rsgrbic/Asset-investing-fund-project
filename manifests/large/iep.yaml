@@ -129,6 +129,25 @@ spec:
       targetPort: http
 
 ---
+# Source: iep/templates/infra/exporters.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  labels:
+    app.kubernetes.io/name: redis-exporter
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: metrics
+
+---
 # Source: iep/templates/infra/ganache.yaml
 apiVersion: v1
 kind: Service
@@ -215,6 +234,7 @@ metadata:
     app.kubernetes.io/component: microservice
     app.kubernetes.io/part-of: iep
 spec:
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: auth # immutable — changing it needs a delete + recreate
@@ -230,7 +250,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:626784dd7d0ca51e6b5a83cd02b8ea45fa20ffab"
+          image: "ghcr.io/rsgrbic/iep-auth:9a80c784e5b90177904d06c487af405c37445061"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -270,6 +290,7 @@ metadata:
     app.kubernetes.io/part-of: iep
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: director # immutable — changing it needs a delete + recreate
@@ -285,7 +306,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:626784dd7d0ca51e6b5a83cd02b8ea45fa20ffab"
+          image: "ghcr.io/rsgrbic/iep-director:9a80c784e5b90177904d06c487af405c37445061"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -324,6 +345,7 @@ metadata:
     app.kubernetes.io/component: microservice
     app.kubernetes.io/part-of: iep
 spec:
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: employee # immutable — changing it needs a delete + recreate
@@ -339,7 +361,7 @@ spec:
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:626784dd7d0ca51e6b5a83cd02b8ea45fa20ffab"
+          image: "ghcr.io/rsgrbic/iep-employee:9a80c784e5b90177904d06c487af405c37445061"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -366,6 +388,50 @@ spec:
             requests:
               cpu: 200m
               memory: 256Mi
+
+---
+# Source: iep/templates/infra/exporters.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  labels:
+    app.kubernetes.io/name: redis-exporter
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  revisionHistoryLimit: 3
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+        app.kubernetes.io/name: redis-exporter
+        app.kubernetes.io/component: exporter
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: exporter
+          image: "oliver006/redis_exporter:v1.89.0-alpine"
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis:6379
+          ports:
+            - name: metrics
+              containerPort: 9121
+          readinessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
 
 ---
 # Source: iep/templates/infra/ganache.yaml
@@ -560,7 +626,14 @@ spec:
       containers:
         - name: redis
           image: "redis:7-alpine"
-          args: ["redis-server", "--appendonly", "yes"]
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --maxmemory
+            - "1024mib"
+            - --maxmemory-policy
+            - "noeviction"
           ports:
             - name: redis
               containerPort: 6379
@@ -733,5 +806,29 @@ spec:
     # 5002, and all three name that port `http`.
     - port: http
       path: "/metrics"
+      interval: "30s"
+      scrapeTimeout: "10s"
+
+---
+# Source: iep/templates/servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: iep-exporters
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: servicemonitor
+    app.kubernetes.io/part-of: iep
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: iep
+      app.kubernetes.io/component: exporter
+  namespaceSelector:
+    matchNames:
+      - iep
+  endpoints:
+    - port: metrics
+      path: /metrics
       interval: "30s"
       scrapeTimeout: "10s"
