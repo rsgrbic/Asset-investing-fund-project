@@ -42,6 +42,12 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: iep
+  syncPolicy:
+    automated:
+      # prune stays OFF for the add-ons. These charts own CRDs, and pruning a
+      # CRD deletes every custom resource of that kind with it.
+      prune: false
+      selfHeal: true
   # AKS's `admissionsenforcer` appends namespaceSelector entries so webhooks
   # cannot intercept AKS-managed namespaces. Git will never contain them, so
   # without this ArgoCD reverts them and AKS re-adds them, forever.

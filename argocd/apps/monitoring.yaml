@@ -95,6 +95,11 @@ spec:
     server: https://kubernetes.default.svc
     namespace: monitoring
   syncPolicy:
+    automated:
+      # prune stays OFF for the add-ons. These charts own CRDs, and pruning a
+      # CRD deletes every custom resource of that kind with it.
+      prune: false
+      selfHeal: true
     syncOptions:
       # The monitoring namespace does not exist yet. Without this the sync fails
       # before creating anything.

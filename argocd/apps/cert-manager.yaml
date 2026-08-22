@@ -26,6 +26,11 @@ spec:
     server: https://kubernetes.default.svc
     namespace: iep
   syncPolicy:
+    automated:
+      # prune stays OFF for the add-ons. These charts own CRDs, and pruning a
+      # CRD deletes every custom resource of that kind with it.
+      prune: false
+      selfHeal: true
     syncOptions:
       # cert-manager's CRDs exceed the annotation size limit that client-side
       # apply uses to store the last-applied config.
@@ -37,5 +42,11 @@ spec:
   ignoreDifferences:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.namespaceSelector
+    # cert-manager renders a Mutating webhook too, and AKS mutates that one the
+    # same way. Without this entry selfHeal reverts it and AKS re-adds it.
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
       jqPathExpressions:
         - .webhooks[]?.namespaceSelector
