@@ -251,7 +251,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:9a80c784e5b90177904d06c487af405c37445061"
+          image: "ghcr.io/rsgrbic/iep-auth:e79d6c20878e7e8b04d72386870c33ab6b1cc5aa"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -307,7 +307,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:9a80c784e5b90177904d06c487af405c37445061"
+          image: "ghcr.io/rsgrbic/iep-director:e79d6c20878e7e8b04d72386870c33ab6b1cc5aa"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -363,7 +363,7 @@ spec:
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:9a80c784e5b90177904d06c487af405c37445061"
+          image: "ghcr.io/rsgrbic/iep-employee:e79d6c20878e7e8b04d72386870c33ab6b1cc5aa"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -633,7 +633,7 @@ spec:
             - --appendonly
             - "yes"
             - --maxmemory
-            - "128mib"
+            - "128mb"
             - --maxmemory-policy
             - "noeviction"
           ports:
