@@ -1,0 +1,74 @@
+{{/*
+Prometheus exporter for Redis.
+
+Redis is the order queue: the employee -> director handoff lives in it. It runs
+with AOF on, no maxmemory and no eviction policy, under a 256Mi container
+limit. So a queue that stops draining grows until the pod is OOMKilled and
+pending orders are lost. `iep_pending_orders` says the count is climbing.
+`redis_memory_used_bytes` says how close that is to the limit, which the count
+alone cannot, because order size varies.
+
+The exporter measures nothing itself. It connects as an ordinary Redis client,
+runs INFO ALL and DBSIZE on each scrape, and reformats the reply.
+
+Mongo and MySQL exporters were considered and dropped: the per-service counters
+in the apps already cover operation counts and latency, and volume fill is
+covered by kubelet_volume_stats_available_bytes.
+*/}}
+{{- if and .Values.monitoring.enabled .Values.monitoring.exporters.enabled }}
+{{- $ex := .Values.monitoring.exporters }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  labels:
+    app.kubernetes.io/name: redis-exporter
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/part-of: iep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  revisionHistoryLimit: 3
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+        app.kubernetes.io/name: redis-exporter
+        app.kubernetes.io/component: exporter
+        app.kubernetes.io/part-of: iep
+    spec:
+      containers:
+        - name: exporter
+          image: {{ $ex.redis.image | quote }}
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis:6379
+          ports:
+            - name: metrics
+              containerPort: 9121
+          readinessProbe:
+            httpGet: { path: /metrics, port: metrics }
+            periodSeconds: 10
+          resources:
+            {{- toYaml $ex.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  labels:
+    app.kubernetes.io/name: redis-exporter
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/part-of: iep
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: metrics
+{{- end }}

@@ -28,7 +28,17 @@ spec:
           {{- /* This Redis is the order QUEUE, not a disposable cache — the
                  employee -> director handoff lives in it. AOF so a restart
                  does not silently drop pending orders. */}}
-          args: ["redis-server", "--appendonly", "yes"]
+          {{- /* noeviction, not an LRU policy: this is a queue, so dropping a
+                 key loses a pending order. At the cap, writes fail with an
+                 error the app can see and count. */}}
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --maxmemory
+            - {{ .Values.infra.redis.maxmemory | quote }}
+            - --maxmemory-policy
+            - {{ .Values.infra.redis.maxmemoryPolicy | quote }}
           ports:
             - name: redis
               containerPort: 6379

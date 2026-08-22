@@ -153,6 +153,17 @@ monitoring:
   # Must stay below interval, or the operator rejects the object.
   scrapeTimeout: 10s
 
+  # Redis only. It reports what the server holds; the counters inside the apps
+  # report who is calling it. Mongo and MySQL exporters were dropped as
+  # redundant with those counters — see templates/infra/exporters.yaml.
+  exporters:
+    enabled: true
+    redis:
+      image: oliver006/redis_exporter:v1.89.0-alpine
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 128Mi }
+
 # Non-secret env, injected into all three services.
 env:
   EMPLOYEE_ROLE: employee
@@ -194,6 +205,17 @@ infra:
   redis:
     image: redis:7-alpine
     storage: 1Gi
+    # Half the container memory limit below. This is the conservative rule of
+    # thumb for a Redis with a forking rewrite, not a calculation: maxmemory
+    # bounds the dataset, while fragmentation and the AOF-rewrite fork are
+    # outside it and cannot be predicted before measuring.
+    # `mib` because Redis reads `mb` as 1000000 bytes and Kubernetes `Mi` as
+    # 1048576 — matching units keeps the 50% exact.
+    # Overridden per profile in scale/*.yaml, because the limit changes there.
+    maxmemory: 128mib
+    # Never an LRU policy here. Redis holds the order queue, so eviction would
+    # delete pending orders silently.
+    maxmemoryPolicy: noeviction
     storageClass: ""
     resources:
       requests: { cpu: 50m, memory: 64Mi }

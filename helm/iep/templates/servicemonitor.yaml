@@ -31,4 +31,32 @@ spec:
       path: {{ .Values.monitoring.path | quote }}
       interval: {{ .Values.monitoring.interval | quote }}
       scrapeTimeout: {{ .Values.monitoring.scrapeTimeout | quote }}
+{{- if .Values.monitoring.exporters.enabled }}
+---
+{{/*
+Separate from the one above because the exporters listen on a port named
+`metrics`, not `http`, and one endpoint entry cannot cover both names.
+*/}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: iep-exporters
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: servicemonitor
+    app.kubernetes.io/part-of: iep
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: iep
+      app.kubernetes.io/component: exporter
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitoring.interval | quote }}
+      scrapeTimeout: {{ .Values.monitoring.scrapeTimeout | quote }}
+{{- end }}
 {{- end }}
