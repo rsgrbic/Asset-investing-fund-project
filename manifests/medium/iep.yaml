@@ -18,6 +18,443 @@ data:
   GANACHE_URL: "http://ganache:8545"
 
 ---
+# Source: iep/templates/dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iep-dashboards
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: iep
+data:
+  iep-overview.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Vote outcomes",
+          "description": "How votes ended. `timeout` means the deadline passed with no Finalized event -- the JOURNEY.md 11.1 race actually firing.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              },
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (outcome) (increase(iep_voting_outcome_total[5m]))",
+              "legendFormat": "{{outcome}}",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Vote watcher threads in flight",
+          "description": "One thread per in-flight vote, all in ONE gunicorn worker. This is why director is pinned to replicaCount: 1.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                }
+              },
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "iep_voting_threads_active",
+              "legendFormat": "{{pod}}",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Vote duration",
+          "description": "Blockchain round trip, deploy to Finalized. Separate from HTTP latency: /decision returns 200 immediately.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                }
+              },
+              "unit": "s",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
+              "legendFormat": "p95",
+              "refId": "A",
+              "range": true
+            },
+            {
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
+              "legendFormat": "p50",
+              "refId": "B",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Pending orders: app view vs Redis view",
+          "description": "director counts the pending_order:* prefix. The exporter counts every key in db0. A gap means something else writes to Redis.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                }
+              },
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "iep_pending_orders",
+              "legendFormat": "iep_pending_orders (director)",
+              "refId": "A",
+              "range": true
+            },
+            {
+              "expr": "redis_db_keys{db=\"db0\"}",
+              "legendFormat": "redis_db_keys (exporter)",
+              "refId": "B",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Database calls per second",
+          "description": "Attribution: which service drives which backend. Exporters cannot answer this -- the connection looks the same from the server side.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              },
+              "unit": "ops",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (job, backend) (rate(iep_db_operations_total[5m]))",
+              "legendFormat": "{{job}} -> {{backend}}",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Database latency p95",
+          "description": "By backend and operation. Client-side wall time, so it includes network.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                }
+              },
+              "unit": "s",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le, backend, operation) (rate(iep_db_operation_duration_seconds_bucket[5m])))",
+              "legendFormat": "{{backend}} {{operation}}",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Login outcomes",
+          "description": "A credential-stuffing probe looks like a spike in invalid_credentials.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              },
+              "unit": "ops",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (result) (rate(iep_login_total[15m]))",
+              "legendFormat": "{{result}}",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "HTTP requests per second",
+          "description": "Edge vs app. nginx counts what arrived; Flask counts what was served.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                }
+              },
+              "unit": "reqps",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (job) (rate(flask_http_request_total[5m]))",
+              "legendFormat": "flask: {{job}}",
+              "refId": "A",
+              "range": true
+            },
+            {
+              "expr": "sum (rate(nginx_ingress_controller_requests[5m]))",
+              "legendFormat": "nginx edge",
+              "refId": "B",
+              "range": true
+            }
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": [
+        "iep"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "IEP - application",
+      "uid": "iep-overview",
+      "version": 1,
+      "weekStart": ""
+    }
+    
+
+---
 # Source: iep/templates/infra/storage.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -251,7 +688,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:e79d6c20878e7e8b04d72386870c33ab6b1cc5aa"
+          image: "ghcr.io/rsgrbic/iep-auth:ccc400313902585dc10f4b4bd39b414ba8019a4e"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -307,7 +744,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:e79d6c20878e7e8b04d72386870c33ab6b1cc5aa"
+          image: "ghcr.io/rsgrbic/iep-director:ccc400313902585dc10f4b4bd39b414ba8019a4e"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -362,7 +799,7 @@ spec:
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:e79d6c20878e7e8b04d72386870c33ab6b1cc5aa"
+          image: "ghcr.io/rsgrbic/iep-employee:ccc400313902585dc10f4b4bd39b414ba8019a4e"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -758,6 +1195,107 @@ spec:
       - http01:
           ingress:
             ingressClassName: "nginx"
+
+---
+# Source: iep/templates/prometheusrule.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: iep-alerts
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: alerts
+    app.kubernetes.io/part-of: iep
+spec:
+  groups:
+    - name: iep.rules
+      interval: 30s
+      rules:
+        # The `small` profile caps containers at 256Mi. An OOMKill-and-restart
+        # leaves no trace except a counter, so this is the one kube-state
+        # metric worth alerting on.
+        #
+        # last_terminated_reason is a gauge that KEEPS reporting the last
+        # reason for ever, so on its own it would fire permanently after one
+        # OOMKill. Pairing it with a recent restart bounds it to the event.
+        - alert: IepPodOOMKilled
+          expr: >-
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace=~"iep|monitoring"} > 0
+            and on (namespace, pod, container)
+            increase(kube_pod_container_status_restarts_total[15m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} was OOMKilled"
+            description: "Container {{ $labels.container }} hit its memory limit and restarted."
+
+        # The centrepiece. A timeout means the vote deadline passed with no
+        # Finalized event, which is the event-filter race from JOURNEY.md
+        # §11.1 actually firing. Zero here means the bug is theoretical.
+        - alert: IepVoteTimedOut
+          expr: increase(iep_voting_outcome_total{outcome="timeout"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A vote expired without a Finalized event"
+            description: "director gave up on a vote after VOTING_DEADLINE_SECONDS. The order stays pending and nothing records why."
+
+        # create_filter() raised, so the watcher thread returned immediately and
+        # the vote can never finalise. Separate from timeout: this one fails at
+        # once rather than an hour later.
+        - alert: IepVoteFilterFailed
+          expr: increase(iep_voting_outcome_total{outcome="filter_error"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A vote watcher could not attach to the contract"
+            description: "web3 create_filter raised. Check that ganache is reachable."
+
+        # Growth matters more than depth: a queue sitting at 16 is fine, a
+        # queue climbing is not. deriv() over 30m is the slope.
+        - alert: IepOrdersNotDraining
+          expr: iep_pending_orders > 20 and deriv(iep_pending_orders[30m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis order queue is growing"
+            description: "{{ $value }} orders pending and still rising. Votes may not be finalising."
+
+        # Only meaningful because maxmemory is set. With maxmemory 0 the
+        # denominator is 0 and this expression produces nothing.
+        - alert: IepRedisMemoryHigh
+          expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis is near its maxmemory cap"
+            description: "Policy is noeviction, so writes start failing at 100% rather than data being dropped."
+
+        # PVCs cannot shrink, so noticing late is expensive. Prometheus's own
+        # 10Gi volume is the most likely to fill.
+        - alert: IepVolumeFilling
+          expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.persistentvolumeclaim }} is over 85% full"
+            description: "Azure disks can grow but never shrink. Expanding is one-way."
+
+        # argocd_app_info is a gauge of 1 carrying sync_status as a label.
+        - alert: IepAppOutOfSync
+          expr: argocd_app_info{sync_status!="Synced"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD app {{ $labels.name }} is {{ $labels.sync_status }}"
+            description: "The cluster no longer matches git, and self-heal has not resolved it."
 
 ---
 # Source: iep/templates/servicemonitor.yaml
