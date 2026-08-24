@@ -30,11 +30,13 @@ spec:
         # last_terminated_reason is a gauge that KEEPS reporting the last
         # reason for ever, so on its own it would fire permanently after one
         # OOMKill. Pairing it with a recent restart bounds it to the event.
+        # The window is 1h, not 15m: with no Alertmanager receiver wired up,
+        # an alert nobody is looking at for 15 minutes may as well not fire.
         - alert: IepPodOOMKilled
           expr: >-
             kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace=~"iep|monitoring"} > 0
             and on (namespace, pod, container)
-            increase(kube_pod_container_status_restarts_total[15m]) > 0
+            increase(kube_pod_container_status_restarts_total[1h]) > 0
           for: 1m
           labels:
             severity: warning
@@ -43,8 +45,10 @@ spec:
             description: "Container {{ `{{ $labels.container }}` }} hit its memory limit and restarted."
 
         # The centrepiece. A timeout means the vote deadline passed with no
-        # Finalized event, which is the event-filter race from JOURNEY.md
-        # §11.1 actually firing. Zero here means the bug is theoretical.
+        # Finalized event. director/app.py polls the event filter inside a bare
+        # `except Exception: pass`, so a dropped web3 connection is swallowed
+        # and the order simply stays pending. Zero here means that path is
+        # theoretical; anything above zero means it is real.
         - alert: IepVoteTimedOut
           expr: increase(iep_voting_outcome_total{outcome="timeout"}[1h]) > 0
           for: 0m

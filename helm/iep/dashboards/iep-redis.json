@@ -1,6 +1,6 @@
 {
-  "uid": "iep-overview",
-  "title": "IEP - application",
+  "uid": "iep-redis-sdk",
+  "title": "IEP - Redis",
   "tags": [
     "iep"
   ],
@@ -19,14 +19,20 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "round(sum by (outcome) (increase(iep_voting_outcome_total[5m])))",
+          "expr": "redis_memory_used_bytes",
           "instant": false,
-          "legendFormat": "{{outcome}}",
+          "legendFormat": "used",
+          "range": true
+        },
+        {
+          "expr": "redis_memory_max_bytes",
+          "instant": false,
+          "legendFormat": "maxmemory",
           "range": true
         }
       ],
-      "title": "Vote outcomes",
-      "description": "How votes ended. timeout means the vote deadline passed with no Finalized event: the watcher polls an event filter inside a bare except, so a dropped web3 connection is swallowed and the order stays pending. filter_error means create_filter raised and the watcher never started at all.",
+      "title": "Memory used against the cap",
+      "description": "used_memory is the allocator's accounting, not process RSS. maxmemory is enforced against THIS number, so this is the pair that decides when writes start failing.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -49,14 +55,13 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
+          "unit": "bytes",
           "min": 0,
           "custom": {
-            "fillOpacity": 20,
+            "fillOpacity": 8,
             "showPoints": "never",
             "stacking": {
-              "mode": "normal"
+              "mode": "none"
             }
           }
         },
@@ -67,14 +72,14 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "iep_voting_threads_active",
+          "expr": "redis_memory_used_bytes / redis_memory_max_bytes",
           "instant": false,
-          "legendFormat": "{{pod}}",
+          "legendFormat": "used / maxmemory",
           "range": true
         }
       ],
-      "title": "Vote watcher threads in flight",
-      "description": "One thread per in-flight vote, all in ONE gunicorn worker. This is the constraint that pins director to replicaCount 1. Adding --workers would break every gauge on this dashboard.",
+      "title": "Memory as a fraction of the cap",
+      "description": "The IepRedisMemoryHigh alert fires above 0.8. Policy is noeviction, so at 1.0 writes are refused with an error rather than keys being dropped.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -97,8 +102,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
+          "unit": "percentunit",
           "min": 0,
           "custom": {
             "fillOpacity": 8,
@@ -115,20 +119,14 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
+          "expr": "redis_db_keys",
           "instant": false,
-          "legendFormat": "p95",
-          "range": true
-        },
-        {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
-          "instant": false,
-          "legendFormat": "p50",
+          "legendFormat": "{{db}}",
           "range": true
         }
       ],
-      "title": "Vote duration",
-      "description": "Deploy to Finalized. Buckets top out at 3600s because that is VOTING_DEADLINE_SECONDS. Nothing in the HTTP metrics can measure this.",
+      "title": "Keys per database",
+      "description": "Redis has 16 databases by default; only db0 is used here. db0 should track iep_pending_orders on the application dashboard.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -151,7 +149,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "short",
+          "decimals": 0,
           "min": 0,
           "custom": {
             "fillOpacity": 8,
@@ -168,20 +167,20 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "iep_pending_orders",
+          "expr": "rate(redis_evicted_keys_total[5m])",
           "instant": false,
-          "legendFormat": "director (pending_order prefix)",
+          "legendFormat": "evicted/s",
           "range": true
         },
         {
-          "expr": "redis_db_keys{db=\"db0\"}",
+          "expr": "rate(redis_expired_keys_total[5m])",
           "instant": false,
-          "legendFormat": "exporter (all keys in db0)",
+          "legendFormat": "expired/s",
           "range": true
         }
       ],
-      "title": "Pending orders: app view vs Redis view",
-      "description": "director counts keys matching the pending_order prefix. The exporter counts every key in db0. A persistent gap means something writes to Redis that director does not know about.",
+      "title": "Evicted and expired keys",
+      "description": "Evicted MUST stay flat at zero. maxmemory-policy is noeviction, so any eviction at all means the policy is not what this chart thinks it is -- and a dropped key is a lost order.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -222,14 +221,14 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (job, backend) (rate(iep_db_operations_total[5m]))",
+          "expr": "sum by (cmd) (rate(redis_commands_total[5m]))",
           "instant": false,
-          "legendFormat": "{{job}} -\u003e {{backend}}",
+          "legendFormat": "{{cmd}}",
           "range": true
         }
       ],
-      "title": "Database calls per second",
-      "description": "Which service drives which backend. Counts WIRE commands, not logical calls -- count_documents() sends aggregate, and scan_iter pages with several SCANs.",
+      "title": "Commands per second",
+      "description": "By command name. Includes the exporter's own INFO and director's scrape-time SCAN, so this never reaches zero.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -269,14 +268,14 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, backend, operation) (rate(iep_db_operation_duration_seconds_bucket[5m])))",
+          "expr": "rate(redis_commands_duration_seconds_total[5m]) / rate(redis_commands_total[5m])",
           "instant": false,
-          "legendFormat": "{{backend}} {{operation}}",
+          "legendFormat": "{{cmd}}",
           "range": true
         }
       ],
-      "title": "Database latency p95",
-      "description": "Client-side wall time, so it includes network and serialisation. Server-side timing would read lower.",
+      "title": "Command latency, server side",
+      "description": "Total command time divided by command count. Compare against iep_db_operation_duration_seconds on the application dashboard: the gap is network and client library time.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -316,14 +315,20 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "round(sum by (result) (increase(iep_login_total[15m])))",
+          "expr": "redis_connected_clients",
           "instant": false,
-          "legendFormat": "{{result}}",
+          "legendFormat": "connected",
+          "range": true
+        },
+        {
+          "expr": "redis_blocked_clients",
+          "instant": false,
+          "legendFormat": "blocked",
           "range": true
         }
       ],
-      "title": "Login outcomes",
-      "description": "unknown-user and wrong-password share the invalid_credentials label on purpose: splitting them would leak which addresses are registered.",
+      "title": "Clients",
+      "description": "blocked_clients above zero means someone is using a blocking command such as BLPOP. This codebase uses none, so it should stay flat.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -350,10 +355,10 @@
           "decimals": 0,
           "min": 0,
           "custom": {
-            "fillOpacity": 20,
+            "fillOpacity": 8,
             "showPoints": "never",
             "stacking": {
-              "mode": "normal"
+              "mode": "none"
             }
           }
         },
@@ -364,20 +369,20 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (job) (rate(flask_http_request_total[5m]))",
+          "expr": "rate(redis_net_input_bytes_total[5m])",
           "instant": false,
-          "legendFormat": "flask: {{job}}",
+          "legendFormat": "in",
           "range": true
         },
         {
-          "expr": "sum (rate(nginx_ingress_controller_requests[5m]))",
+          "expr": "rate(redis_net_output_bytes_total[5m])",
           "instant": false,
-          "legendFormat": "nginx edge",
+          "legendFormat": "out",
           "range": true
         }
       ],
-      "title": "HTTP requests per second",
-      "description": "nginx counts what arrived at the edge; Flask counts what each service served. The difference is traffic nginx rejected or served itself.",
+      "title": "Network throughput",
+      "description": "Useful mainly as a sanity check that traffic matches the command rate above.",
       "transparent": false,
       "gridPos": {
         "h": 8,
@@ -400,7 +405,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "Bps",
           "min": 0,
           "custom": {
             "fillOpacity": 8,

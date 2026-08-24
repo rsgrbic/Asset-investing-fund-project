@@ -74,9 +74,25 @@ spec:
             existingSecret: grafana-admin
             userKey: admin-user
             passwordKey: admin-password
+          # Measured, not guessed: the container sat at 507Mi against a 512Mi
+          # limit and was OOMKilled twice. Grafana 13 with ~33 provisioned
+          # dashboards does not fit in 512Mi.
           resources:
-            requests: { cpu: 10m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 10m, memory: 512Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+          # Both sidecars ran with no limits at all. They sit at ~73Mi each and
+          # only watch ConfigMaps, so 128Mi is generous. `sidecar.resources`
+          # applies to every sidecar the chart creates.
+          sidecar:
+            resources:
+              requests: { cpu: 5m, memory: 64Mi }
+              limits: { cpu: 100m, memory: 128Mi }
+          env:
+            # Go's GC knows nothing about the cgroup limit, so by default it
+            # grows the heap until the kernel kills the process. GOMEMLIMIT
+            # makes it collect harder as it approaches this figure. Kept below
+            # the limit above so the GC acts before the OOM killer does.
+            GOMEMLIMIT: "900MiB"
           ingress:
             enabled: true
             ingressClassName: nginx
