@@ -18,6 +18,8 @@ from prometheus_flask_exporter import PrometheusMetrics
 # Module scope: create_app() may run more than once, and a duplicate
 # registration raises.
 LOGIN_TOTAL = Counter("iep_login_total", "Login attempts by result", ["result"])
+for _result in ("success", "invalid_credentials", "bad_request"):
+    LOGIN_TOTAL.labels(result=_result)
 DB_OPS = Counter(
     "iep_db_operations_total",
     "Database calls made by this service",

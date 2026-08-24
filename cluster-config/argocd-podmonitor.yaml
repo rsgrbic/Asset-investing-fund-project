@@ -25,6 +25,15 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/part-of: argocd
+    matchExpressions:
+      # dex declares a metrics port but never binds it. It serves telemetry
+      # only when its config carries a telemetry.http section, and argocd-cm
+      # holds no dex.config at all, so no SSO connector is set up. The port
+      # refuses every connection, which would leave one target down for ever.
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - argocd-dex-server
   namespaceSelector:
     matchNames:
       - argocd

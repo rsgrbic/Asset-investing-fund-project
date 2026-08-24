@@ -1,0 +1,111 @@
+{{/*
+Alert rules.
+
+The Prometheus Operator watches PrometheusRule objects, writes their contents
+into a Secret, and mounts it into the Prometheus pod. Prometheus then evaluates
+every `expr` on the `interval` below. Nothing here is hand-written scrape or
+rule config.
+
+Every metric used here was checked against the live Prometheus first. An alert
+on a metric that never appears is silent, and silence reads as health.
+*/}}
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: iep-alerts
+  labels:
+    app.kubernetes.io/name: iep
+    app.kubernetes.io/component: alerts
+    app.kubernetes.io/part-of: iep
+spec:
+  groups:
+    - name: iep.rules
+      interval: 30s
+      rules:
+        # The `small` profile caps containers at 256Mi. An OOMKill-and-restart
+        # leaves no trace except a counter, so this is the one kube-state
+        # metric worth alerting on.
+        #
+        # last_terminated_reason is a gauge that KEEPS reporting the last
+        # reason for ever, so on its own it would fire permanently after one
+        # OOMKill. Pairing it with a recent restart bounds it to the event.
+        - alert: IepPodOOMKilled
+          expr: >-
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace=~"iep|monitoring"} > 0
+            and on (namespace, pod, container)
+            increase(kube_pod_container_status_restarts_total[15m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ `{{ $labels.namespace }}/{{ $labels.pod }}` }} was OOMKilled"
+            description: "Container {{ `{{ $labels.container }}` }} hit its memory limit and restarted."
+
+        # The centrepiece. A timeout means the vote deadline passed with no
+        # Finalized event, which is the event-filter race from JOURNEY.md
+        # §11.1 actually firing. Zero here means the bug is theoretical.
+        - alert: IepVoteTimedOut
+          expr: increase(iep_voting_outcome_total{outcome="timeout"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A vote expired without a Finalized event"
+            description: "director gave up on a vote after VOTING_DEADLINE_SECONDS. The order stays pending and nothing records why."
+
+        # create_filter() raised, so the watcher thread returned immediately and
+        # the vote can never finalise. Separate from timeout: this one fails at
+        # once rather than an hour later.
+        - alert: IepVoteFilterFailed
+          expr: increase(iep_voting_outcome_total{outcome="filter_error"}[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A vote watcher could not attach to the contract"
+            description: "web3 create_filter raised. Check that ganache is reachable."
+
+        # Growth matters more than depth: a queue sitting at 16 is fine, a
+        # queue climbing is not. deriv() over 30m is the slope.
+        - alert: IepOrdersNotDraining
+          expr: iep_pending_orders > 20 and deriv(iep_pending_orders[30m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis order queue is growing"
+            description: "{{ `{{ $value }}` }} orders pending and still rising. Votes may not be finalising."
+
+        # Only meaningful because maxmemory is set. With maxmemory 0 the
+        # denominator is 0 and this expression produces nothing.
+        - alert: IepRedisMemoryHigh
+          expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis is near its maxmemory cap"
+            description: "Policy is noeviction, so writes start failing at 100% rather than data being dropped."
+
+        # PVCs cannot shrink, so noticing late is expensive. Prometheus's own
+        # 10Gi volume is the most likely to fill.
+        - alert: IepVolumeFilling
+          expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ `{{ $labels.persistentvolumeclaim }}` }} is over 85% full"
+            description: "Azure disks can grow but never shrink. Expanding is one-way."
+
+        # argocd_app_info is a gauge of 1 carrying sync_status as a label.
+        - alert: IepAppOutOfSync
+          expr: argocd_app_info{sync_status!="Synced"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD app {{ `{{ $labels.name }}` }} is {{ `{{ $labels.sync_status }}` }}"
+            description: "The cluster no longer matches git, and self-heal has not resolved it."
+{{- end }}

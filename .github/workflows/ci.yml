@@ -110,10 +110,12 @@ jobs:
       # Operator. Without the CRD the dry-run below fails with
       # "no matches for kind". Pinned to the operator version
       # kube-prometheus-stack 88.5.0 installs in the cluster.
-      - name: Install the ServiceMonitor CRD
+      - name: Install the Prometheus Operator CRDs
         run: |
           set -euo pipefail
-          kubectl apply --server-side -f             https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.93.1/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+          for crd in servicemonitors prometheusrules; do
+            kubectl apply --server-side -f "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.93.1/example/prometheus-operator-crd/monitoring.coreos.com_$crd.yaml"
+          done
 
       # `kubectl apply --dry-run=server` validates each object.
       - name: Validate every env config 

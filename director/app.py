@@ -36,6 +36,12 @@ VOTING_OUTCOME = Counter(
     "How a vote ended",
     ["outcome"],
 )
+# Create the four child series at import. A labelled Counter has no series
+# until its first .inc(), and increase() over a window with no data returns
+# nothing at all -- not 0. An alert on a metric that does not exist never
+# fires and never shows an error, so the silence looks like health.
+for _outcome in ("approved", "rejected", "timeout", "filter_error"):
+    VOTING_OUTCOME.labels(outcome=_outcome)
 PENDING_ORDERS = Gauge("iep_pending_orders", "Orders waiting in Redis")
 ASSETS_VALUE = Gauge("iep_assets_value", "Money per category", ["category", "kind"])
 
