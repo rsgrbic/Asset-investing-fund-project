@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 import os
+from datetime import datetime, timezone
+import json
+import sys
+import logging
 import time
 from email_validator import EmailNotValidError, validate_email
 from flask import Flask, jsonify, request
@@ -11,6 +15,48 @@ from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, verify_jwt_in_request
 
 from models import User ,db, hash_password, verify_password
+
+
+# ---- structured logging ------------------------------------------------------
+# One JSON object per line on stdout. Loki stores lines verbatim, so the format
+# only matters at query time: `| json` then turns every key below into a
+# filterable label without a regex.
+_LOG_STD_ATTRS = set(
+    vars(logging.LogRecord("", 0, "", 0, "", (), None))
+) | {"message", "asctime", "taskName"}
+
+
+class _JsonFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        # Anything passed as logger.info("...", extra={"order_uuid": x}) lands
+        # on the record as a plain attribute. Emit whatever is not standard.
+        for key, value in record.__dict__.items():
+            if key not in _LOG_STD_ATTRS:
+                payload[key] = value
+        if record.exc_info:
+            payload["traceback"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
+
+
+def _configure_logging():
+    """Replace the root handlers so gunicorn's default format does not win."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_JsonFormatter())
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+
+
+_configure_logging()
+log = logging.getLogger("iep.auth")
 
 from prometheus_client import Counter, Histogram
 from prometheus_flask_exporter import PrometheusMetrics

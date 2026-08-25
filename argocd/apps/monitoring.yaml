@@ -93,6 +93,17 @@ spec:
             # makes it collect harder as it approaches this figure. Kept below
             # the limit above so the GC acts before the OOM killer does.
             GOMEMLIMIT: "900MiB"
+          # Grafana needs to know Loki exists. The stack provisions only its
+          # own Prometheus datasource; anything else is added here.
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://loki.monitoring.svc:3100
+              jsonData:
+                # Links a log line back to a trace if tracing ever arrives.
+                maxLines: 1000
           ingress:
             enabled: true
             ingressClassName: nginx

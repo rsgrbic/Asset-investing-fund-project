@@ -1,5 +1,7 @@
 from flask import Flask, jsonify, request
 import os
+import sys
+import logging
 import re
 import time
 from pymongo import MongoClient, monitoring
@@ -11,6 +13,48 @@ import json
 
 from bson import ObjectId
 from bson.errors import InvalidId
+
+
+# ---- structured logging ------------------------------------------------------
+# One JSON object per line on stdout. Loki stores lines verbatim, so the format
+# only matters at query time: `| json` then turns every key below into a
+# filterable label without a regex.
+_LOG_STD_ATTRS = set(
+    vars(logging.LogRecord("", 0, "", 0, "", (), None))
+) | {"message", "asctime", "taskName"}
+
+
+class _JsonFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        # Anything passed as logger.info("...", extra={"order_uuid": x}) lands
+        # on the record as a plain attribute. Emit whatever is not standard.
+        for key, value in record.__dict__.items():
+            if key not in _LOG_STD_ATTRS:
+                payload[key] = value
+        if record.exc_info:
+            payload["traceback"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
+
+
+def _configure_logging():
+    """Replace the root handlers so gunicorn's default format does not win."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_JsonFormatter())
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+
+
+_configure_logging()
+log = logging.getLogger("iep.employee")
 
 from prometheus_client import Counter, Histogram
 from prometheus_flask_exporter import PrometheusMetrics
@@ -289,6 +333,12 @@ def create_app():
             "buying_price": buying_price,
         }
         redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order))
+        # The order UUID is the thread that ties employee -> Redis -> director
+        # together. Logging it here is what makes one vote greppable end to end.
+        log.info(
+            "order created",
+            extra={"order_uuid": order_uuid, "order_type": "BUY", "name": name},
+        )
         return "", 200
 
     @app.post("/create_sell_order")
@@ -330,6 +380,10 @@ def create_app():
             "selling_price": selling_price,
         }
         redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order),ex=604800)
+        log.info(
+            "order created",
+            extra={"order_uuid": order_uuid, "order_type": "SELL", "asset_id": asset_id},
+        )
         return "", 200
     
     @app.get("/health")

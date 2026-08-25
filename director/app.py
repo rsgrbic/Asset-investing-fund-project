@@ -3,6 +3,8 @@ from flask_jwt_extended import JWTManager,get_jwt,verify_jwt_in_request
 from pymongo import MongoClient, monitoring
 from collections import defaultdict
 import os
+import sys
+import logging
 from redis import Redis
 import json
 from web3 import Web3
@@ -15,6 +17,48 @@ import time
 
 from bson import ObjectId
 from bson.errors import InvalidId
+
+
+# ---- structured logging ------------------------------------------------------
+# One JSON object per line on stdout. Loki stores lines verbatim, so the format
+# only matters at query time: `| json` then turns every key below into a
+# filterable label without a regex.
+_LOG_STD_ATTRS = set(
+    vars(logging.LogRecord("", 0, "", 0, "", (), None))
+) | {"message", "asctime", "taskName"}
+
+
+class _JsonFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        # Anything passed as logger.info("...", extra={"order_uuid": x}) lands
+        # on the record as a plain attribute. Emit whatever is not standard.
+        for key, value in record.__dict__.items():
+            if key not in _LOG_STD_ATTRS:
+                payload[key] = value
+        if record.exc_info:
+            payload["traceback"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
+
+
+def _configure_logging():
+    """Replace the root handlers so gunicorn's default format does not win."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_JsonFormatter())
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+
+
+_configure_logging()
+log = logging.getLogger("iep.director")
 
 from prometheus_client import Counter, Gauge, Histogram
 from prometheus_flask_exporter import PrometheusMetrics
@@ -229,11 +273,25 @@ def create_app():
         try:
             event_filter = instace.events.Finalized.create_filter(fromBlock="latest")
         except Exception:
-            VOTING_OUTCOME.labels(outcome="events_filter_error").inc()
+            VOTING_OUTCOME.labels(outcome="filter_error").inc()
+            log.exception(
+                "vote watcher could not attach to the contract",
+                extra={"order_uuid": order_uuid, "contract": contract_address},
+            )
             return
 
         deadline = time.time() + int(os.environ.get("VOTING_DEADLINE_SECONDS",3600)) # 1 Hour to finalzie
         started = time.time()
+        poll_errors = 0
+        last_error_logged = 0.0
+        log.info(
+            "vote watcher started",
+            extra={
+                "order_uuid": order_uuid,
+                "contract": contract_address,
+                "deadline_seconds": int(deadline - started),
+            },
+        )
         # try/finally, so a thread that dies early still releases the gauge.
         VOTING_THREADS.inc()
         try:
@@ -242,16 +300,52 @@ def create_app():
                     for event in event_filter.get_new_entries():
                         approved = bool(event["args"]["approved"])
                         _finalize_order(order_uuid, approved)
-                        VOTING_DURATION.observe(time.time() - started)
+                        elapsed = time.time() - started
+                        VOTING_DURATION.observe(elapsed)
                         VOTING_OUTCOME.labels(
                             outcome="approved" if approved else "rejected"
                         ).inc()
+                        log.info(
+                            "vote finalized",
+                            extra={
+                                "order_uuid": order_uuid,
+                                "approved": approved,
+                                "duration_seconds": round(elapsed, 2),
+                                "poll_errors": poll_errors,
+                            },
+                        )
                         return
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # This was a bare `pass`. Swallowing is still right -- one
+                    # failed read must not abandon the vote -- but it must not
+                    # be silent. Throttled to one line a minute: the loop runs
+                    # twice a second for up to an hour, so an unthrottled log
+                    # would be 7200 lines per broken vote.
+                    poll_errors += 1
+                    now = time.time()
+                    if poll_errors == 1 or now - last_error_logged >= 60:
+                        last_error_logged = now
+                        log.warning(
+                            "vote poll failed, still retrying",
+                            extra={
+                                "order_uuid": order_uuid,
+                                "contract": contract_address,
+                                "poll_errors": poll_errors,
+                                "error": repr(exc),
+                            },
+                        )
                 time.sleep(0.5)
             # Reached only when the deadline passed with no Finalized event.
             VOTING_OUTCOME.labels(outcome="timeout").inc()
+            log.error(
+                "vote expired with no Finalized event",
+                extra={
+                    "order_uuid": order_uuid,
+                    "contract": contract_address,
+                    "waited_seconds": round(time.time() - started),
+                    "poll_errors": poll_errors,
+                },
+            )
         finally:
             VOTING_THREADS.dec()
     
@@ -280,8 +374,8 @@ def create_app():
             _pending_last["value"] = float(
                 sum(1 for _ in redis_client.scan_iter(match=f"{PENDING_ORDER_PREFIX}*"))
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("redis scan for pending orders failed", extra={"error": repr(exc)})
         return _pending_last["value"]
 
     PENDING_ORDERS.set_function(_count_pending_orders)

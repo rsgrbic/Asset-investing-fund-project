@@ -1,0 +1,175 @@
+# Logs: Loki stores and queries, Alloy collects. Two Applications in one file
+# because neither is useful without the other.
+#
+# Loki collects nothing itself -- it is the counterpart to Prometheus's TSDB,
+# not to Prometheus. Something has to push into it. Promtail used to be that
+# something; it reached end of support in March 2026 and was merged into Alloy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iep-loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 7.3.0
+    helm:
+      values: |
+        # The chart defaults to a distributed deployment backed by object
+        # storage. On one node that is wrong in every dimension, so almost
+        # every value below exists to switch something OFF.
+        deploymentMode: SingleBinary
+        loki:
+          # Without this every query needs an X-Scope-OrgID header, including
+          # Grafana's. Single tenant, so there is nothing to separate.
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          storage:
+            type: filesystem
+          # Required since chart 6.x. Loki refuses to start without an explicit
+          # schema, because guessing one would silently orphan existing data.
+          schemaConfig:
+            configs:
+              - from: "2024-04-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index: { prefix: index_, period: 24h }
+          limits_config:
+            # 7 days, matching Prometheus retention. A metric and its logs
+            # should not disappear at different times.
+            retention_period: 168h
+          compactor:
+            # retention_period alone marks data expired; the compactor is what
+            # actually deletes it. Off by default, so the disk would fill.
+            retention_enabled: true
+            delete_request_store: filesystem
+        singleBinary:
+          replicas: 1
+          persistence:
+            enabled: true
+            storageClass: managed-csi
+            size: 10Gi
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 1000m, memory: 1Gi }
+        # The distributed roles must be explicitly zeroed or the chart renders
+        # them anyway, alongside the single binary.
+        read: { replicas: 0 }
+        write: { replicas: 0 }
+        backend: { replicas: 0 }
+        # memcached, sized for a real cluster. Left on it asks for gigabytes.
+        chunksCache: { enabled: false }
+        resultsCache: { enabled: false }
+        # An nginx in front of the components. With one binary there is nothing
+        # to route, and Alloy can address the Service directly.
+        gateway: { enabled: false }
+        # A pod that writes and reads back a heartbeat to prove Loki works.
+        # Useful in production, noise here.
+        lokiCanary: { enabled: false }
+        test: { enabled: false }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+# Alloy, configured for logs ONLY. It is component-based: it does exactly what
+# its config declares and nothing else. There is no metrics pipeline to switch
+# off, because no prometheus.* component is declared. Prometheus keeps scraping
+# metrics exactly as before and the two never overlap.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iep-alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 1.12.0
+    helm:
+      values: |
+        controller:
+          # One per node. Container logs are node-local files.
+          type: daemonset
+        alloy:
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          configMap:
+            content: |
+              // Find every pod in the cluster.
+              discovery.kubernetes "pods" {
+                role = "pod"
+              }
+
+              // These four rules are the point of the whole file. They produce
+              // namespace, pod, container and app labels whose names MATCH the
+              // ones Prometheus already uses, which is what puts a metric graph
+              // and its logs one click apart instead of two investigations.
+              discovery.relabel "pods" {
+                targets = discovery.kubernetes.pods.targets
+
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  target_label  = "container"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_label_app"]
+                  target_label  = "app"
+                }
+              }
+
+              // Reads container logs through the Kubernetes API rather than
+              // mounting /var/log/pods. No hostPath, slightly more API traffic.
+              // At this size that is the better trade.
+              loki.source.kubernetes "pods" {
+                targets    = discovery.relabel.pods.output
+                forward_to = [loki.write.default.receiver]
+              }
+
+              // Kubernetes Events are API objects with roughly a one-hour TTL,
+              // not log files. ImagePullBackOff reasons, probe failures and
+              // evictions evaporate unless something copies them out first.
+              loki.source.kubernetes_events "events" {
+                forward_to = [loki.write.default.receiver]
+              }
+
+              // Lines are shipped raw. The JSON the services emit is parsed at
+              // QUERY time with `| json`, so the pipeline stays dumb and a
+              // change to the log format needs no redeploy of Alloy.
+              loki.write "default" {
+                endpoint {
+                  url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
+                }
+              }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
