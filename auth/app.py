@@ -40,6 +40,15 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+class _DropProbeAccess(logging.Filter):
+    def filter(self, record):
+        # Matches gunicorn's `r` atom, not the whole line, so a /metrics
+        # referer or user agent cannot drop a real request.
+        atoms = record.args if isinstance(record.args, dict) else {}
+        request = atoms.get("r", "")
+        return "/health" not in request and "/metrics" not in request
+
+
 def _configure_logging():
     """Replace the root handlers so gunicorn's default format does not win."""
     handler = logging.StreamHandler(sys.stdout)
@@ -47,6 +56,8 @@ def _configure_logging():
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+    # Probes and scrapes are ~20 lines/min/pod. Prometheus already counts them.
+    logging.getLogger("gunicorn.access").addFilter(_DropProbeAccess())
 
 
 _configure_logging()

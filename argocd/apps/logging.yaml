@@ -43,8 +43,6 @@ spec:
             delete_request_store: filesystem
         singleBinary:
           replicas: 1
-          # Standard_E2ds_v4 allows 4 attached disks. This is the fourth, after
-          # mysql, mongo and prometheus. Redis gave up its claim to free it.
           persistence:
             enabled: true
             storageClass: managed-csi
