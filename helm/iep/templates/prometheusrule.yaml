@@ -57,6 +57,17 @@ spec:
             summary: "Redis order queue is growing"
             description: "{{ `{{ $value }}` }} orders pending and still rising. Votes may not be finalising."
 
+        # Redis holds pending orders in memory only. `and on()` is required: the
+        # two metrics come from different jobs and share no labels to match on.
+        - alert: IepPendingOrdersLost
+          expr: iep_pending_orders offset 15m > 0 and on() redis_uptime_in_seconds < 600
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Redis restarted while orders were pending"
+            description: "{{ `{{ $value }}` }} orders were pending 15m ago and Redis has just restarted. Query Loki for `order created` without a matching finalisation to recover the UUIDs."
+
         # Requires maxmemory; with maxmemory 0 the denominator is 0.
         - alert: IepRedisMemoryHigh
           expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8

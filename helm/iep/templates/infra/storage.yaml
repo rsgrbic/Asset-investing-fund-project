@@ -1,5 +1,5 @@
 {{/* helm uninstall deletes these PVCs and the data with them. */}}
-{{- range $item := list "mysql" "mongo" "redis" }}
+{{- range $item := list "mysql" "mongo" }}
 {{- with index $.Values.infra $item }}
 ---
 apiVersion: v1

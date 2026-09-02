@@ -50,8 +50,6 @@ infra:
     storageClass: managed-csi
   mongo:
     storageClass: managed-csi
-  redis:
-    storageClass: managed-csi
 
 secrets:
   create: false

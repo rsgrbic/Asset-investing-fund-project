@@ -10,7 +10,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+    type: Recreate # One Redis at a time; two would hold different orders.
   selector:
     matchLabels:
       app: redis
@@ -25,7 +25,8 @@ spec:
       containers:
         - name: redis
           image: {{ .Values.infra.redis.image | quote }}
-          {{- /* Order queue, not a cache. AOF + noeviction: a lost key = a lost order. */}}
+          {{- /* No disk: a pod restart drops every pending order. AOF and noeviction only
+              guard a container crash and an eviction. IepPendingOrdersLost reports the rest. */}}
           args:
             - redis-server
             - --appendonly
@@ -49,8 +50,7 @@ spec:
             {{- toYaml .Values.infra.redis.resources | nindent 12 }}
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: redis-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

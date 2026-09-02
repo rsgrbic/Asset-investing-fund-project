@@ -75,9 +75,8 @@ spec:
             resources:
               requests: { cpu: 5m, memory: 64Mi }
               limits: { cpu: 100m, memory: 128Mi }
-          env:
-            # Below the memory limit so GC acts before the OOM killer.
-            GOMEMLIMIT: "900MiB"
+          # No GOMEMLIMIT here: the chart already sets it from limits.memory,
+          # and a second entry breaks ArgoCD's structured merge diff.
           # The stack only provisions its own Prometheus datasource.
           additionalDataSources:
             - name: Loki

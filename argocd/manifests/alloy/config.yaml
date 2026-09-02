@@ -1,6 +1,5 @@
-# Applied by hand, like argocd-podmonitor.yaml. Alloy mounts these, so they must
-# exist before the iep-alloy Applications sync or the pods fail on a missing volume.
-# ArgoCD does not manage them: a change here needs a re-apply and a pod restart.
+# Synced by argocd/apps/alloy-config.yaml at wave -2, before the Alloy charts.
+# A pod that starts first fails the mount and retries, so ordering is not fatal.
 apiVersion: v1
 kind: ConfigMap
 metadata:

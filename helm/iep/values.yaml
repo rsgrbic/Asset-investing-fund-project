@@ -152,12 +152,10 @@ infra:
       limits: { cpu: 1000m, memory: 768Mi }
   redis:
     image: redis:7-alpine
-    storage: 1Gi
     # Half the container memory limit. Overridden per profile in scale/*.yaml.
     maxmemory: 128mb
     # noeviction: eviction would silently drop pending orders.
     maxmemoryPolicy: noeviction
-    storageClass: ""
     resources:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { cpu: 500m, memory: 256Mi }

@@ -1,0 +1,25 @@
+# Alloy's River config as plain ConfigMaps. Wave -2 so they exist before the
+# charts at -1. Kept out of the Application values: a 60-line config nested in a
+# YAML string cannot be read or validated.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iep-alloy-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsgrbic/Asset-investing-fund-project.git
+    targetRevision: main
+    path: argocd/manifests/alloy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

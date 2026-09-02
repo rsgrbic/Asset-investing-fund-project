@@ -327,7 +327,8 @@ def create_app():
         redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order))
         log.info(
             "order created",
-            extra={"order_uuid": order_uuid, "order_type": "BUY", "name": name},
+            # `name` is a reserved LogRecord attribute; extra would raise KeyError.
+            extra={"order_uuid": order_uuid, "order_type": "BUY", "asset_name": name},
         )
         return "", 200
 
