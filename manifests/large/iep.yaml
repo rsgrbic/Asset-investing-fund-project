@@ -31,425 +31,2435 @@ metadata:
 data:
   iep-overview.json: |
     {
-      "annotations": {
-        "list": []
-      },
-      "editable": true,
-      "graphTooltip": 1,
-      "links": [],
-      "panels": [
-        {
-          "type": "timeseries",
-          "title": "Vote outcomes",
-          "description": "How votes ended. `timeout` means the deadline passed with no Finalized event -- the JOURNEY.md 11.1 race actually firing.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 0
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 20,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "normal",
-                  "group": "A"
-                }
-              },
-              "unit": "short",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "sum by (outcome) (increase(iep_voting_outcome_total[5m]))",
-              "legendFormat": "{{outcome}}",
-              "refId": "A",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Vote watcher threads in flight",
-          "description": "One thread per in-flight vote, all in ONE gunicorn worker. This is why director is pinned to replicaCount: 1.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 0
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 8,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "none",
-                  "group": "A"
-                }
-              },
-              "unit": "short",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "iep_voting_threads_active",
-              "legendFormat": "{{pod}}",
-              "refId": "A",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Vote duration",
-          "description": "Blockchain round trip, deploy to Finalized. Separate from HTTP latency: /decision returns 200 immediately.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 8
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 8,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "none",
-                  "group": "A"
-                }
-              },
-              "unit": "s",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
-              "legendFormat": "p95",
-              "refId": "A",
-              "range": true
-            },
-            {
-              "expr": "histogram_quantile(0.50, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
-              "legendFormat": "p50",
-              "refId": "B",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Pending orders: app view vs Redis view",
-          "description": "director counts the pending_order:* prefix. The exporter counts every key in db0. A gap means something else writes to Redis.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 8
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 8,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "none",
-                  "group": "A"
-                }
-              },
-              "unit": "short",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "iep_pending_orders",
-              "legendFormat": "iep_pending_orders (director)",
-              "refId": "A",
-              "range": true
-            },
-            {
-              "expr": "redis_db_keys{db=\"db0\"}",
-              "legendFormat": "redis_db_keys (exporter)",
-              "refId": "B",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Database calls per second",
-          "description": "Attribution: which service drives which backend. Exporters cannot answer this -- the connection looks the same from the server side.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 16
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 20,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "normal",
-                  "group": "A"
-                }
-              },
-              "unit": "ops",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "sum by (job, backend) (rate(iep_db_operations_total[5m]))",
-              "legendFormat": "{{job}} -> {{backend}}",
-              "refId": "A",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Database latency p95",
-          "description": "By backend and operation. Client-side wall time, so it includes network.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 16
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 8,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "none",
-                  "group": "A"
-                }
-              },
-              "unit": "s",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "histogram_quantile(0.95, sum by (le, backend, operation) (rate(iep_db_operation_duration_seconds_bucket[5m])))",
-              "legendFormat": "{{backend}} {{operation}}",
-              "refId": "A",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Login outcomes",
-          "description": "A credential-stuffing probe looks like a spike in invalid_credentials.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 24
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 20,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "normal",
-                  "group": "A"
-                }
-              },
-              "unit": "ops",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "sum by (result) (rate(iep_login_total[15m]))",
-              "legendFormat": "{{result}}",
-              "refId": "A",
-              "range": true
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "HTTP requests per second",
-          "description": "Edge vs app. nginx counts what arrived; Flask counts what was served.",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 24
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 8,
-                "showPoints": "never",
-                "stacking": {
-                  "mode": "none",
-                  "group": "A"
-                }
-              },
-              "unit": "reqps",
-              "min": 0
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "expr": "sum by (job) (rate(flask_http_request_total[5m]))",
-              "legendFormat": "flask: {{job}}",
-              "refId": "A",
-              "range": true
-            },
-            {
-              "expr": "sum (rate(nginx_ingress_controller_requests[5m]))",
-              "legendFormat": "nginx edge",
-              "refId": "B",
-              "range": true
-            }
-          ]
-        }
-      ],
-      "refresh": "30s",
-      "schemaVersion": 39,
+      "uid": "iep-overview",
+      "title": "IEP - application",
       "tags": [
         "iep"
       ],
-      "templating": {
-        "list": []
-      },
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 0,
       "time": {
         "from": "now-6h",
         "to": "now"
       },
-      "timepicker": {},
+      "fiscalYearStartMonth": 0,
+      "refresh": "30s",
+      "schemaVersion": 42,
+      "panels": [
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "round(sum by (outcome) (increase(iep_voting_outcome_total[5m])))",
+              "instant": false,
+              "legendFormat": "{{outcome}}",
+              "range": true
+            }
+          ],
+          "title": "Vote outcomes",
+          "description": "How votes ended. timeout means the vote deadline passed with no Finalized event: the watcher polls an event filter inside a bare except, so a dropped web3 connection is swallowed and the order stays pending. filter_error means create_filter raised and the watcher never started at all.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "iep_voting_threads_active",
+              "instant": false,
+              "legendFormat": "{{pod}}",
+              "range": true
+            }
+          ],
+          "title": "Vote watcher threads in flight",
+          "description": "One thread per in-flight vote, all in ONE gunicorn worker. This is the constraint that pins director to replicaCount 1. Adding --workers would break every gauge on this dashboard.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
+              "instant": false,
+              "legendFormat": "p95",
+              "range": true
+            },
+            {
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))",
+              "instant": false,
+              "legendFormat": "p50",
+              "range": true
+            }
+          ],
+          "title": "Vote duration",
+          "description": "Deploy to Finalized. Buckets top out at 3600s because that is VOTING_DEADLINE_SECONDS. Nothing in the HTTP metrics can measure this.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "iep_pending_orders",
+              "instant": false,
+              "legendFormat": "director (pending_order prefix)",
+              "range": true
+            },
+            {
+              "expr": "redis_db_keys{db=\"db0\"}",
+              "instant": false,
+              "legendFormat": "exporter (all keys in db0)",
+              "range": true
+            }
+          ],
+          "title": "Pending orders: app view vs Redis view",
+          "description": "director counts keys matching the pending_order prefix. The exporter counts every key in db0. A persistent gap means something writes to Redis that director does not know about.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum by (job, backend) (rate(iep_db_operations_total[5m]))",
+              "instant": false,
+              "legendFormat": "{{job}} -\u003e {{backend}}",
+              "range": true
+            }
+          ],
+          "title": "Database calls per second",
+          "description": "Which service drives which backend. Counts WIRE commands, not logical calls -- count_documents() sends aggregate, and scan_iter pages with several SCANs.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le, backend, operation) (rate(iep_db_operation_duration_seconds_bucket[5m])))",
+              "instant": false,
+              "legendFormat": "{{backend}} {{operation}}",
+              "range": true
+            }
+          ],
+          "title": "Database latency p95",
+          "description": "Client-side wall time, so it includes network and serialisation. Server-side timing would read lower.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "round(sum by (result) (increase(iep_login_total[15m])))",
+              "instant": false,
+              "legendFormat": "{{result}}",
+              "range": true
+            }
+          ],
+          "title": "Login outcomes",
+          "description": "unknown-user and wrong-password share the invalid_credentials label on purpose: splitting them would leak which addresses are registered.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum by (job) (rate(flask_http_request_total[5m]))",
+              "instant": false,
+              "legendFormat": "flask: {{job}}",
+              "range": true
+            },
+            {
+              "expr": "sum (rate(nginx_ingress_controller_requests[5m]))",
+              "instant": false,
+              "legendFormat": "nginx edge",
+              "range": true
+            }
+          ],
+          "title": "HTTP requests per second",
+          "description": "nginx counts what arrived at the edge; Flask counts what each service served. The difference is traffic nginx rejected or served itself.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "templating": {},
+      "annotations": {}
+    }
+    
+  iep-redis.json: |
+    {
+      "uid": "iep-redis-sdk",
+      "title": "IEP - Redis",
+      "tags": [
+        "iep"
+      ],
       "timezone": "browser",
-      "title": "IEP - application",
-      "uid": "iep-overview",
-      "version": 1,
+      "editable": true,
+      "graphTooltip": 0,
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "fiscalYearStartMonth": 0,
+      "refresh": "30s",
+      "schemaVersion": 42,
+      "panels": [
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "redis_memory_used_bytes",
+              "instant": false,
+              "legendFormat": "used",
+              "range": true
+            },
+            {
+              "expr": "redis_memory_max_bytes",
+              "instant": false,
+              "legendFormat": "maxmemory",
+              "range": true
+            }
+          ],
+          "title": "Memory used against the cap",
+          "description": "used_memory is the allocator's accounting, not process RSS. maxmemory is enforced against THIS number, so this is the pair that decides when writes start failing.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "redis_memory_used_bytes / redis_memory_max_bytes",
+              "instant": false,
+              "legendFormat": "used / maxmemory",
+              "range": true
+            }
+          ],
+          "title": "Memory as a fraction of the cap",
+          "description": "The IepRedisMemoryHigh alert fires above 0.8. Policy is noeviction, so at 1.0 writes are refused with an error rather than keys being dropped.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "redis_db_keys",
+              "instant": false,
+              "legendFormat": "{{db}}",
+              "range": true
+            }
+          ],
+          "title": "Keys per database",
+          "description": "Redis has 16 databases by default; only db0 is used here. db0 should track iep_pending_orders on the application dashboard.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "rate(redis_evicted_keys_total[5m])",
+              "instant": false,
+              "legendFormat": "evicted/s",
+              "range": true
+            },
+            {
+              "expr": "rate(redis_expired_keys_total[5m])",
+              "instant": false,
+              "legendFormat": "expired/s",
+              "range": true
+            }
+          ],
+          "title": "Evicted and expired keys",
+          "description": "Evicted MUST stay flat at zero. maxmemory-policy is noeviction, so any eviction at all means the policy is not what this chart thinks it is -- and a dropped key is a lost order.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum by (cmd) (rate(redis_commands_total[5m]))",
+              "instant": false,
+              "legendFormat": "{{cmd}}",
+              "range": true
+            }
+          ],
+          "title": "Commands per second",
+          "description": "By command name. Includes the exporter's own INFO and director's scrape-time SCAN, so this never reaches zero.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 20,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "rate(redis_commands_duration_seconds_total[5m]) / rate(redis_commands_total[5m])",
+              "instant": false,
+              "legendFormat": "{{cmd}}",
+              "range": true
+            }
+          ],
+          "title": "Command latency, server side",
+          "description": "Total command time divided by command count. Compare against iep_db_operation_duration_seconds on the application dashboard: the gap is network and client library time.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "redis_connected_clients",
+              "instant": false,
+              "legendFormat": "connected",
+              "range": true
+            },
+            {
+              "expr": "redis_blocked_clients",
+              "instant": false,
+              "legendFormat": "blocked",
+              "range": true
+            }
+          ],
+          "title": "Clients",
+          "description": "blocked_clients above zero means someone is using a blocking command such as BLPOP. This codebase uses none, so it should stay flat.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "rate(redis_net_input_bytes_total[5m])",
+              "instant": false,
+              "legendFormat": "in",
+              "range": true
+            },
+            {
+              "expr": "rate(redis_net_output_bytes_total[5m])",
+              "instant": false,
+              "legendFormat": "out",
+              "range": true
+            }
+          ],
+          "title": "Network throughput",
+          "description": "Useful mainly as a sanity check that traffic matches the command rate above.",
+          "transparent": false,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "repeatDirection": "h",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 8,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "templating": {},
+      "annotations": {}
+    }
+    
+  redis.json: |
+    {
+      "__elements": {},
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "type": "datasource",
+              "uid": "grafana"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Redis Dashboard for Prometheus Redis Exporter 1.x",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "gnetId": 763,
+      "graphTooltip": 1,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "rgb(31, 120, 193)",
+                "mode": "fixed"
+              },
+              "decimals": 0,
+              "mappings": [
+                {
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "N/A"
+                    }
+                  },
+                  "type": "special"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "s",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 3,
+            "x": 0,
+            "y": 0
+          },
+          "id": 9,
+          "links": [],
+          "maxDataPoints": 100,
+          "options": {
+            "colorMode": "none",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max(max_over_time(redis_uptime_in_seconds{instance=~\"$instance\"}[$__interval]))",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "",
+              "metric": "",
+              "refId": "A",
+              "step": 1800
+            }
+          ],
+          "title": "Max Uptime",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "rgb(31, 120, 193)",
+                "mode": "fixed"
+              },
+              "decimals": 0,
+              "mappings": [
+                {
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "N/A"
+                    }
+                  },
+                  "type": "special"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 2,
+            "x": 3,
+            "y": 0
+          },
+          "hideTimeOverride": true,
+          "id": 12,
+          "links": [],
+          "maxDataPoints": 100,
+          "options": {
+            "colorMode": "none",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(redis_connected_clients{instance=~\"$instance\"})",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "",
+              "metric": "",
+              "refId": "A",
+              "step": 2
+            }
+          ],
+          "timeFrom": "1m",
+          "title": "Clients",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "mappings": [
+                {
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "N/A"
+                    }
+                  },
+                  "type": "special"
+                }
+              ],
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "rgba(50, 172, 45, 0.97)",
+                    "value": null
+                  },
+                  {
+                    "color": "rgba(237, 129, 40, 0.89)",
+                    "value": 80
+                  },
+                  {
+                    "color": "rgba(245, 54, 54, 0.9)",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percent",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 3,
+            "x": 5,
+            "y": 0
+          },
+          "hideTimeOverride": true,
+          "id": 11,
+          "links": [],
+          "maxDataPoints": 100,
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(100 * (redis_memory_used_bytes{instance=~\"$instance\"}  / redis_memory_max_bytes{instance=~\"$instance\"}))",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "",
+              "metric": "",
+              "refId": "A",
+              "step": 2
+            }
+          ],
+          "timeFrom": "1m",
+          "title": "Memory Usage",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 80,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 0
+          },
+          "id": 18,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(redis_commands_total{instance=~\"$instance\"} [1m])) by (cmd)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ cmd }}",
+              "metric": "redis_command_calls_total",
+              "refId": "A",
+              "step": 240
+            }
+          ],
+          "title": "Total Commands / sec",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 0
+          },
+          "id": 1,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "irate(redis_keyspace_hits_total{instance=~\"$instance\"}[5m])",
+              "format": "time_series",
+              "hide": false,
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "hits, {{ instance }}",
+              "metric": "",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "irate(redis_keyspace_misses_total{instance=~\"$instance\"}[5m])",
+              "format": "time_series",
+              "hide": false,
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "misses, {{ instance }}",
+              "metric": "",
+              "refId": "B",
+              "step": 240,
+              "target": ""
+            }
+          ],
+          "title": "Hits / Misses per Sec",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes",
+              "unitScale": true
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "max"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#BF1B00",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 7
+          },
+          "id": 7,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "redis_memory_used_bytes{instance=~\"$instance\"}",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "used, {{ instance }}",
+              "metric": "",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "redis_memory_max_bytes{instance=~\"$instance\"}",
+              "format": "time_series",
+              "hide": false,
+              "intervalFactor": 2,
+              "legendFormat": "max, {{ instance }}",
+              "refId": "B",
+              "step": 240
+            }
+          ],
+          "title": "Total Memory Usage",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 10,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(redis_net_input_bytes_total{instance=~\"$instance\"}[5m]))",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "{{ input }}",
+              "refId": "A",
+              "step": 240
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(redis_net_output_bytes_total{instance=~\"$instance\"}[5m]))",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ output }}",
+              "refId": "B",
+              "step": 240
+            }
+          ],
+          "title": "Network I/O",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 70,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "none",
+              "unitScale": true
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byValue",
+                  "options": {
+                    "op": "gte",
+                    "reducer": "allIsZero",
+                    "value": 0
+                  }
+                },
+                "properties": [
+                  {
+                    "id": "custom.hideFrom",
+                    "value": {
+                      "legend": true,
+                      "tooltip": true,
+                      "viz": false
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 14
+          },
+          "id": 5,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum (redis_db_keys{instance=~\"$instance\"}) by (db, instance)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ db }}, {{ instance }}",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            }
+          ],
+          "title": "Total Items per DB",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 70,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 14
+          },
+          "id": 13,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum (redis_db_keys{instance=~\"$instance\"}) by (instance) - sum (redis_db_keys_expiring{instance=~\"$instance\"}) by (instance)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "not expiring, {{ instance }}",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum (redis_db_keys_expiring{instance=~\"$instance\"}) by (instance)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "expiring, {{ instance }}",
+              "metric": "",
+              "refId": "B",
+              "step": 240
+            }
+          ],
+          "title": "Expiring vs Not-Expiring Keys",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short",
+              "unitScale": true
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "evicts"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#890F02",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "memcached_items_evicted_total{instance=\"172.17.0.1:9150\",job=\"prometheus\"}"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#890F02",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "reclaims"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#3F6833",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "id": 8,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(redis_expired_keys_total{instance=~\"$instance\"}[5m])) by (instance)",
+              "format": "time_series",
+              "hide": false,
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "expired, {{ instance }}",
+              "metric": "",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(redis_evicted_keys_total{instance=~\"$instance\"}[5m])) by (instance)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "evicted, {{ instance }}",
+              "refId": "B",
+              "step": 240
+            }
+          ],
+          "title": "Expired/Evicted Keys",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "id": 16,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(redis_connected_clients{instance=~\"$instance\"})",
+              "format": "time_series",
+              "intervalFactor": 1,
+              "legendFormat": "connected",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(redis_blocked_clients{instance=~\"$instance\"})",
+              "format": "time_series",
+              "intervalFactor": 1,
+              "legendFormat": "blocked",
+              "refId": "B"
+            }
+          ],
+          "title": "Connected/Blocked Clients",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "s",
+              "unitScale": true
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byValue",
+                  "options": {
+                    "op": "gte",
+                    "reducer": "allIsZero",
+                    "value": 0
+                  }
+                },
+                "properties": [
+                  {
+                    "id": "custom.hideFrom",
+                    "value": {
+                      "legend": true,
+                      "tooltip": true,
+                      "viz": false
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 28
+          },
+          "id": 20,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance =~ \"$instance\"}[1m])) by (cmd)\n  /\nsum(irate(redis_commands_total{instance =~ \"$instance\"}[1m])) by (cmd)\n",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ cmd }}",
+              "metric": "redis_command_calls_total",
+              "refId": "A",
+              "step": 240
+            }
+          ],
+          "title": "Average Time Spent by Command / sec",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 80,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "s",
+              "unitScale": true
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 28
+          },
+          "id": 14,
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "pluginVersion": "10.3.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[1m])) by (cmd) != 0",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ cmd }}",
+              "metric": "redis_command_calls_total",
+              "refId": "A",
+              "step": 240
+            }
+          ],
+          "title": "Total Time Spent by Command / sec",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "",
+      "schemaVersion": 39,
+      "tags": [
+        "community",
+        "iep",
+        "prometheus",
+        "redis"
+      ],
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "definition": "label_values(redis_up, namespace)",
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "namespace",
+            "options": [],
+            "query": "label_values(redis_up, namespace)",
+            "refresh": 2,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "tagValuesQuery": "",
+            "tagsQuery": "",
+            "type": "query",
+            "useTags": false
+          },
+          {
+            "current": {},
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "definition": "label_values(redis_up{namespace=~\"$namespace\"}, instance)",
+            "hide": 0,
+            "includeAll": false,
+            "multi": true,
+            "name": "instance",
+            "options": [],
+            "query": "label_values(redis_up{namespace=~\"$namespace\"}, instance)",
+            "refresh": 2,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "tagValuesQuery": "",
+            "tagsQuery": "",
+            "type": "query",
+            "useTags": false
+          }
+        ]
+      },
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "timepicker": {
+        "refresh_intervals": [
+          "5s",
+          "10s",
+          "30s",
+          "1m",
+          "5m",
+          "15m",
+          "30m",
+          "1h",
+          "2h",
+          "1d"
+        ],
+        "time_options": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "12h",
+          "24h",
+          "2d",
+          "7d",
+          "30d"
+        ]
+      },
+      "timezone": "browser",
+      "title": "IEP - Redis (community 763 rev 6)",
+      "uid": "iep-redis",
+      "version": 2,
       "weekStart": ""
     }
     
@@ -674,20 +2684,20 @@ spec:
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app: auth # immutable — changing it needs a delete + recreate
+      app: auth
   template:
     metadata:
       labels:
-        app: auth # must match the selector above
+        app: auth
         app.kubernetes.io/name: auth
         app.kubernetes.io/component: microservice
         app.kubernetes.io/part-of: iep
       annotations:
-        checksum/config: acf479041843eef1c1f1d5c1e9d2e73de89ce1d8e2484b9527b738d47680cbc9
+        checksum/config: ccc056aa453abbdfdacff15b765ae245304c828d16874ff2ed6f67e04ce4bb7d
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:ccc400313902585dc10f4b4bd39b414ba8019a4e"
+          image: "ghcr.io/rsgrbic/iep-auth:d43d4796d524861cfadf6ea2be585ead7f040b46"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -730,20 +2740,20 @@ spec:
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app: director # immutable — changing it needs a delete + recreate
+      app: director
   template:
     metadata:
       labels:
-        app: director # must match the selector above
+        app: director
         app.kubernetes.io/name: director
         app.kubernetes.io/component: microservice
         app.kubernetes.io/part-of: iep
       annotations:
-        checksum/config: acf479041843eef1c1f1d5c1e9d2e73de89ce1d8e2484b9527b738d47680cbc9
+        checksum/config: ccc056aa453abbdfdacff15b765ae245304c828d16874ff2ed6f67e04ce4bb7d
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:ccc400313902585dc10f4b4bd39b414ba8019a4e"
+          image: "ghcr.io/rsgrbic/iep-director:d43d4796d524861cfadf6ea2be585ead7f040b46"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -785,20 +2795,20 @@ spec:
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app: employee # immutable — changing it needs a delete + recreate
+      app: employee
   template:
     metadata:
       labels:
-        app: employee # must match the selector above
+        app: employee
         app.kubernetes.io/name: employee
         app.kubernetes.io/component: microservice
         app.kubernetes.io/part-of: iep
       annotations:
-        checksum/config: acf479041843eef1c1f1d5c1e9d2e73de89ce1d8e2484b9527b738d47680cbc9
+        checksum/config: ccc056aa453abbdfdacff15b765ae245304c828d16874ff2ed6f67e04ce4bb7d
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:ccc400313902585dc10f4b4bd39b414ba8019a4e"
+          image: "ghcr.io/rsgrbic/iep-employee:d43d4796d524861cfadf6ea2be585ead7f040b46"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -934,7 +2944,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+    type: Recreate
   selector:
     matchLabels:
       app: mongo
@@ -1235,18 +3245,13 @@ spec:
     - name: iep.rules
       interval: 30s
       rules:
-        # The `small` profile caps containers at 256Mi. An OOMKill-and-restart
-        # leaves no trace except a counter, so this is the one kube-state
-        # metric worth alerting on.
-        #
-        # last_terminated_reason is a gauge that KEEPS reporting the last
-        # reason for ever, so on its own it would fire permanently after one
-        # OOMKill. Pairing it with a recent restart bounds it to the event.
+        # last_terminated_reason persists forever; pairing with a recent
+        # restart bounds the alert to the actual event.
         - alert: IepPodOOMKilled
           expr: >-
             kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace=~"iep|monitoring"} > 0
             and on (namespace, pod, container)
-            increase(kube_pod_container_status_restarts_total[15m]) > 0
+            increase(kube_pod_container_status_restarts_total[1h]) > 0
           for: 1m
           labels:
             severity: warning
@@ -1254,9 +3259,7 @@ spec:
             summary: "{{ $labels.namespace }}/{{ $labels.pod }} was OOMKilled"
             description: "Container {{ $labels.container }} hit its memory limit and restarted."
 
-        # The centrepiece. A timeout means the vote deadline passed with no
-        # Finalized event, which is the event-filter race from JOURNEY.md
-        # §11.1 actually firing. Zero here means the bug is theoretical.
+        # A timeout means the vote deadline passed with no Finalized event.
         - alert: IepVoteTimedOut
           expr: increase(iep_voting_outcome_total{outcome="timeout"}[1h]) > 0
           for: 0m
@@ -1266,9 +3269,7 @@ spec:
             summary: "A vote expired without a Finalized event"
             description: "director gave up on a vote after VOTING_DEADLINE_SECONDS. The order stays pending and nothing records why."
 
-        # create_filter() raised, so the watcher thread returned immediately and
-        # the vote can never finalise. Separate from timeout: this one fails at
-        # once rather than an hour later.
+        # create_filter() raised; the vote can never finalise.
         - alert: IepVoteFilterFailed
           expr: increase(iep_voting_outcome_total{outcome="filter_error"}[1h]) > 0
           for: 0m
@@ -1278,8 +3279,7 @@ spec:
             summary: "A vote watcher could not attach to the contract"
             description: "web3 create_filter raised. Check that ganache is reachable."
 
-        # Growth matters more than depth: a queue sitting at 16 is fine, a
-        # queue climbing is not. deriv() over 30m is the slope.
+        # deriv() over 30m catches a growing queue, not just a deep one.
         - alert: IepOrdersNotDraining
           expr: iep_pending_orders > 20 and deriv(iep_pending_orders[30m]) > 0
           for: 15m
@@ -1289,8 +3289,7 @@ spec:
             summary: "Redis order queue is growing"
             description: "{{ $value }} orders pending and still rising. Votes may not be finalising."
 
-        # Only meaningful because maxmemory is set. With maxmemory 0 the
-        # denominator is 0 and this expression produces nothing.
+        # Requires maxmemory; with maxmemory 0 the denominator is 0.
         - alert: IepRedisMemoryHigh
           expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
           for: 10m
@@ -1300,8 +3299,7 @@ spec:
             summary: "Redis is near its maxmemory cap"
             description: "Policy is noeviction, so writes start failing at 100% rather than data being dropped."
 
-        # PVCs cannot shrink, so noticing late is expensive. Prometheus's own
-        # 10Gi volume is the most likely to fill.
+        # PVCs cannot shrink; Prometheus's 10Gi volume is most likely to fill.
         - alert: IepVolumeFilling
           expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
           for: 15m
@@ -1311,7 +3309,6 @@ spec:
             summary: "{{ $labels.persistentvolumeclaim }} is over 85% full"
             description: "Azure disks can grow but never shrink. Expanding is one-way."
 
-        # argocd_app_info is a gauge of 1 carrying sync_status as a label.
         - alert: IepAppOutOfSync
           expr: argocd_app_info{sync_status!="Synced"} == 1
           for: 15m
@@ -1340,8 +3337,6 @@ spec:
     matchNames:
       - iep
   endpoints:
-    # By port NAME, not number. The three services listen on 5000, 5001 and
-    # 5002, and all three name that port `http`.
     - port: http
       path: "/metrics"
       interval: "30s"
