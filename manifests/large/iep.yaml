@@ -2501,24 +2501,6 @@ spec:
       storage: "64Gi"
 
 ---
-# Source: iep/templates/infra/storage.yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-data
-  labels:
-    app.kubernetes.io/name: redis-data
-    app.kubernetes.io/component: storage
-    app.kubernetes.io/part-of: iep
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: "managed-csi"
-  resources:
-    requests:
-      storage: "16Gi"
-
----
 # Source: iep/templates/app/service.yaml
 apiVersion: v1
 kind: Service
@@ -2697,7 +2679,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:d43d4796d524861cfadf6ea2be585ead7f040b46"
+          image: "ghcr.io/rsgrbic/iep-auth:69051b47941897704c993f575bdc1e32f219a2d0"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -2753,7 +2735,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:d43d4796d524861cfadf6ea2be585ead7f040b46"
+          image: "ghcr.io/rsgrbic/iep-director:69051b47941897704c993f575bdc1e32f219a2d0"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -2808,7 +2790,7 @@ spec:
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:d43d4796d524861cfadf6ea2be585ead7f040b46"
+          image: "ghcr.io/rsgrbic/iep-employee:69051b47941897704c993f575bdc1e32f219a2d0"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -3058,7 +3040,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+    type: Recreate # One Redis at a time; two would hold different orders.
   selector:
     matchLabels:
       app: redis
@@ -3101,8 +3083,7 @@ spec:
               memory: 512Mi
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: redis-data
+          emptyDir: {}
 
 ---
 # Source: iep/templates/app/hpa.yaml
@@ -3288,6 +3269,17 @@ spec:
           annotations:
             summary: "Redis order queue is growing"
             description: "{{ $value }} orders pending and still rising. Votes may not be finalising."
+
+        # Redis holds pending orders in memory only. `and on()` is required: the
+        # two metrics come from different jobs and share no labels to match on.
+        - alert: IepPendingOrdersLost
+          expr: iep_pending_orders offset 15m > 0 and on() redis_uptime_in_seconds < 600
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Redis restarted while orders were pending"
+            description: "{{ $value }} orders were pending 15m ago and Redis has just restarted. Query Loki for `order created` without a matching finalisation to recover the UUIDs."
 
         # Requires maxmemory; with maxmemory 0 the denominator is 0.
         - alert: IepRedisMemoryHigh
