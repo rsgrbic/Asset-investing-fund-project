@@ -1,20 +1,11 @@
 # =============================================================================
 # HOSTED — the AKS cluster. Layered on top of values.yaml.
-#
-#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
-#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/*.yaml
-#
-# ONLY environment-specific keys belong here — the things that are true because
-# this is Azure. Sizing (replicas, resources, storage) lives in scale/, and
-# anything set here would be silently overridden by it.
-#
+# Sizing lives in scale/*.yaml; only environment-specific keys belong here.
 # =============================================================================
 
 registry: "ghcr.io/rsgrbic"
 
-# image.tag is supplied by CI at render time (`helm template --set`), never
-# stored here. The tag that is actually deployed lives in the rendered output on
-# the deploy branch, so a value in this file could only ever be stale.
+# image.tag is set by CI at render time, never stored here.
 services:
   auth:
     host: auth.20.215.32.142.sslip.io
@@ -34,20 +25,15 @@ ingress-nginx:
   controller:
     service:
       annotations:
-        # Required, or nothing reaches the cluster. Azure probes the nodePort
-        # with `GET /` and drops traffic to any node that does not answer
-        # 2xx/3xx; ingress-nginx returns 404 there because a probe carries no
-        # matching Host header. /healthz answers 200 regardless of Host.
+        # Azure health probe hits /; ingress-nginx returns 404 without a Host.
         service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
-        # Attach the pre-created static IP from iep-rg instead of letting AKS
-        # allocate (and later garbage-collect) one of its own.
+        # Pre-created static IP from iep-rg.
         service.beta.kubernetes.io/azure-pip-name: LBalancer_IP
         service.beta.kubernetes.io/azure-load-balancer-resource-group: iep-rg
 
 cert-manager:
   enabled: false
 
-# kube-prometheus-stack runs here, so the CRDs exist.
 monitoring:
   enabled: true
 
@@ -56,12 +42,10 @@ ingress:
   acmeEmail: "ga210363d@student.etf.bg.ac.rs"
 
 infra:
-  # Ganache has no authentication, so it is deliberately NOT routed here.
-  # director still reaches it in-cluster at http://ganache:8545.
+  # Not routed publicly; no authentication.
   ganache:
     host: ""
-  # Azure managed disks instead of the local hostpath provisioner. Minimum
-  # billable size is 4 GiB regardless of what is requested.
+  # Azure managed disks; minimum billable size is 4 GiB.
   mysql:
     storageClass: managed-csi
   mongo:
@@ -69,6 +53,5 @@ infra:
   redis:
     storageClass: managed-csi
 
-# see helm/README.md
 secrets:
   create: false

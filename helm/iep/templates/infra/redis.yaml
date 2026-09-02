@@ -25,12 +25,7 @@ spec:
       containers:
         - name: redis
           image: {{ .Values.infra.redis.image | quote }}
-          {{- /* This Redis is the order QUEUE, not a disposable cache — the
-                 employee -> director handoff lives in it. AOF so a restart
-                 does not silently drop pending orders. */}}
-          {{- /* noeviction, not an LRU policy: this is a queue, so dropping a
-                 key loses a pending order. At the cap, writes fail with an
-                 error the app can see and count. */}}
+          {{- /* Order queue, not a cache. AOF + noeviction: a lost key = a lost order. */}}
           args:
             - redis-server
             - --appendonly

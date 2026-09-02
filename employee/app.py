@@ -16,9 +16,6 @@ from bson.errors import InvalidId
 
 
 # ---- structured logging ------------------------------------------------------
-# One JSON object per line on stdout. Loki stores lines verbatim, so the format
-# only matters at query time: `| json` then turns every key below into a
-# filterable label without a regex.
 _LOG_STD_ATTRS = set(
     vars(logging.LogRecord("", 0, "", 0, "", (), None))
 ) | {"message", "asctime", "taskName"}
@@ -34,8 +31,6 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        # Anything passed as logger.info("...", extra={"order_uuid": x}) lands
-        # on the record as a plain attribute. Emit whatever is not standard.
         for key, value in record.__dict__.items():
             if key not in _LOG_STD_ATTRS:
                 payload[key] = value
@@ -73,7 +68,7 @@ DB_DURATION = Histogram(
 
 
 class _MongoMetrics(monitoring.CommandListener):
-    """Tracks Mongo commands. pymongo provides a base class."""
+    """Tracks Mongo wire commands."""
 
     def started(self, event):
         pass
@@ -86,12 +81,11 @@ class _MongoMetrics(monitoring.CommandListener):
         DB_OPS.labels("mongo", event.command_name, "error").inc()
 
 
-# Module level register
 monitoring.register(_MongoMetrics())
 
 
 class _MeteredRedis(Redis):
-    """Superclass that wraps Redis client to measure operations."""
+    """Wraps execute_command to measure operations."""
 
     def execute_command(self, *args, **kwargs):
         op = args[0] if args else "unknown"
@@ -149,8 +143,6 @@ def create_app():
     app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY","HARDCODED")
     JWTManager(app)
 
-    # Adds /metrics and RED metrics per route. Custom Mongo attribution
-    # metrics land here in phase 3.
     PrometheusMetrics(app)
 
 
@@ -333,8 +325,6 @@ def create_app():
             "buying_price": buying_price,
         }
         redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order))
-        # The order UUID is the thread that ties employee -> Redis -> director
-        # together. Logging it here is what makes one vote greppable end to end.
         log.info(
             "order created",
             extra={"order_uuid": order_uuid, "order_type": "BUY", "name": name},

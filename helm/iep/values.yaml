@@ -12,14 +12,11 @@ services:
   auth:
     image:
       repository: iep-auth
-      # Locally built straight into the cluster's daemon. values-hosted.yaml
-      # overrides this with the git SHA.
       tag: latest
     replicaCount: 1
     port: 5000
     host: auth.iep.local
-    # requests are what the scheduler reserves AND what the HPA divides by —
-    # without a cpu request, autoscaling silently does nothing.
+    # HPA divides by cpu request; without one it shows <unknown>.
     resources:
       requests: { cpu: 50m, memory: 96Mi }
       limits: { cpu: 500m, memory: 384Mi }
@@ -33,8 +30,6 @@ services:
     image:
       repository: iep-employee
       tag: latest
-    # 3 locally too, so the ingress actually load-balances and local behaviour
-    # matches the cluster.
     replicaCount: 3
     port: 5001
     host: employee.iep.local
@@ -51,11 +46,8 @@ services:
     image:
       repository: iep-director
       tag: latest
-    # MUST STAY AT 1, autoscaling MUST stay off. POST /decision spawns a
-    # background thread that waits for the on-chain Finalized event before
-    # writing to MongoDB. That thread lives in one Pod. With 2+ replicas the
-    # vote can be finalised by a Pod that has no listener and the write never
-    # happens. Move the listener to a worker before changing this.
+    # MUST STAY AT 1. The vote watcher thread lives in one Pod; with 2+
+    # replicas a vote can finalise on a Pod with no listener.
     replicaCount: 1
     port: 5002
     host: director.iep.local
@@ -68,94 +60,54 @@ services:
       maxReplicas: 1
       targetCPUUtilizationPercentage: 80
 
-# ---- The ingress CONTROLLER (subchart) --------------------------------------
-# The nginx Pods that actually route traffic. Declared as a dependency in
-# Chart.yaml, so it installs alongside the app. Two separate things get
-# confused constantly:
-#   this block          = the controller, the thing doing the routing
-#   the `ingress` block = our Ingress resource, the routing RULE it reads
-# A rule with no controller running is inert — no error, no traffic.
-#
-# Set enabled: false if the cluster already has a controller (it is
-# cluster-scoped, so two would collide over the IngressClass).
+# ---- ingress-nginx (subchart) ------------------------------------------------
 ingress-nginx:
   enabled: true
   controller:
     replicaCount: 1
     service:
-      # Docker Desktop maps this to localhost; AKS provisions a public IP.
       type: LoadBalancer
-    # If the install hangs on "failed calling webhook", the validating webhook
-    # cannot be reached — set this to false to skip it.
+    # Set false if the install hangs on "failed calling webhook".
     admissionWebhooks:
       enabled: true
 
 # ---- cert-manager (subchart) -------------------------------------------------
-# Issues and renews TLS certificates. OFF locally, and not out of laziness:
-# Let's Encrypt validates a hostname by fetching a token from it over the
-# PUBLIC internet, and *.iep.local resolves only on this machine. There is no
-# way to obtain a real certificate for a local-only name.
+# Off locally: Let's Encrypt validates over the public internet.
 cert-manager:
   enabled: false
   crds:
-    # cert-manager's CRDs (Certificate, ClusterIssuer, Order, Challenge...).
-    # Helm installs CRDs but never upgrades or deletes them — a CRD version
-    # bump is a manual step, not something `helm upgrade` handles.
+    # Helm installs CRDs but never upgrades or deletes them.
     enabled: true
 
-# ---- Our Ingress RESOURCE ---------------------------------------------------
-# One Ingress routing all three services by hostname:
-#     auth.iep.local     -> auth     :5000
-#     employee.iep.local -> employee :5001
-#     director.iep.local -> director :5002
-# On locally as well as hosted, so the routing path is exercised before Azure.
+# ---- Ingress resource --------------------------------------------------------
 ingress:
   enabled: true
-  # Must match the controller's IngressClass. The subchart above creates one
-  # called "nginx".
   className: nginx
 
-  # Name of the ClusterIssuer the Ingress asks for certificates from. Setting
-  # it turns TLS on. Empty locally — see the cert-manager block above.
+  # Empty = no TLS. Setting it makes the Ingress request a certificate.
   clusterIssuer: ""
-  # Setting an email additionally makes this chart CREATE that ClusterIssuer
-  # (templates/app/clusterissuer.yaml). Let's Encrypt requires it for expiry
-  # notices. Leave empty to reference an issuer you created yourself.
+  # Setting an email also creates the ClusterIssuer via clusterissuer.yaml.
   acmeEmail: ""
-  # Production Let's Encrypt. Swap for
-  #   https://acme-staging-v02.api.letsencrypt.org/directory
-  # to get untrusted certs under far looser rate limits — see README §6.
+  # Swap for the staging URL to get untrusted certs under looser rate limits.
   acmeServer: https://acme-v02.api.letsencrypt.org/directory
 
-  # nginx settings for the whole Ingress. See the header comment in
-  # templates/app/ingress.yaml for what an annotation is and why these exist.
   annotations:
-    # Cap on request body size. Default is 1m, which is small for JSON payloads.
     nginx.ingress.kubernetes.io/proxy-body-size: 2m
-    # director's POST /decision can block while deploying a contract to
-    # Ganache. nginx's default 60s races director's gunicorn --timeout 60.
-    # Harmless for auth and employee: this caps how long nginx is willing to
-    # wait, it does not add latency to fast responses.
+    # director's contract deploy can exceed nginx's default 60s.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
 
 # ---- Prometheus scraping -----------------------------------------------------
-# Off locally: templates/servicemonitor.yaml renders a CRD that a plain kind or
-# minikube cluster does not have, and the apply fails with "no matches for
-# kind". Turn it on only where the Prometheus Operator runs.
+# Off locally: ServiceMonitor CRDs do not exist without the operator.
 monitoring:
   enabled: false
-  # prometheus-flask-exporter serves this on the same port the app listens on.
-  # TODO: block this path at the ingress. `/` is routed to each service, so the
-  # metrics are reachable on the public host today.
+  # TODO: block /metrics at the ingress; it is currently public.
   path: /metrics
   interval: 30s
-  # Must stay below interval, or the operator rejects the object.
+  # Must stay below interval.
   scrapeTimeout: 10s
 
-  # Redis only. It reports what the server holds; the counters inside the apps
-  # report who is calling it. Mongo and MySQL exporters were dropped as
-  # redundant with those counters — see templates/infra/exporters.yaml.
+  # Redis only; mongo/mysql exporters dropped as redundant with in-app counters.
   exporters:
     enabled: true
     redis:
@@ -164,18 +116,14 @@ monitoring:
       requests: { cpu: 10m, memory: 32Mi }
       limits: { cpu: 100m, memory: 128Mi }
 
-# Non-secret env, injected into all three services.
 env:
   EMPLOYEE_ROLE: employee
   DIRECTOR_ROLE: director
   VOTING_DEADLINE_SECONDS: "3600"
   MYSQL_DATABASE: iep_auth
 
-# create: true  -> chart renders Secret "iep-secret" from the values below.
-#                  Local only. Supply real values via a gitignored
-#                  -f secrets.local.yaml; never commit them.
-# create: false -> chart renders nothing and expects "iep-secret" to already
-#                  exist in the namespace. This is what values-hosted.yaml does.
+# create: true renders iep-secret from values below (local only).
+# create: false expects it to already exist (values-hosted.yaml).
 secrets:
   create: true
   jwtSecretKey: "CHANGE_ME_dev_only"
@@ -205,33 +153,19 @@ infra:
   redis:
     image: redis:7-alpine
     storage: 1Gi
-    # Half the container memory limit below. This is the conservative rule of
-    # thumb for a Redis with a forking rewrite, not a calculation: maxmemory
-    # bounds the dataset, while fragmentation and the AOF-rewrite fork are
-    # outside it and cannot be predicted before measuring.
-    # Redis `mb` is 1024-based, the same as Kubernetes `Mi`, so these numbers
-    # compare directly with the limits above. Redis has no `mib` suffix, and
-    # its lowercase `m` means 1000000 bytes.
-    # Overridden per profile in scale/*.yaml, because the limit changes there.
+    # Half the container memory limit. Overridden per profile in scale/*.yaml.
     maxmemory: 128mb
-    # Never an LRU policy here. Redis holds the order queue, so eviction would
-    # delete pending orders silently.
+    # noeviction: eviction would silently drop pending orders.
     maxmemoryPolicy: noeviction
     storageClass: ""
     resources:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { cpu: 500m, memory: 256Mi }
-  # In-memory chain, no --db: every restart wipes contracts and balances.
-  # Off when running the grader without --with-blockchain.
+  # In-memory chain; every restart wipes contracts and balances.
   ganache:
     enabled: true
-    # Expose the JSON-RPC endpoint through the ingress, for the pytest grader's
-    # --provider-url and for MetaMask/curl from the host. Empty = cluster-only.
-    #
-    # Leave this EMPTY on any cluster reachable from the internet: Ganache has
-    # no authentication whatsoever, so a public JSON-RPC endpoint lets anyone
-    # drain the funded accounts, deploy contracts, or mine at your expense.
-    # director reaches it in-cluster via http://ganache:8545 regardless.
+    # Empty = cluster-only. Ganache has no authentication; do not expose
+    # on a public cluster.
     host: ganache.iep.local
     image: trufflesuite/ganache-cli:latest
     defaultBalanceEther: 10000

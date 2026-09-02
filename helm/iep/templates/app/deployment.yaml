@@ -9,29 +9,23 @@ metadata:
     app.kubernetes.io/component: microservice
     app.kubernetes.io/part-of: iep
 spec:
-  {{- /* Omitted when an HPA owns this Deployment, or the two fight: every
-         `helm upgrade` resets the count and the HPA undoes it 15s later. */}}
+  {{- /* Omitted when HPA is active, or helm upgrade fights the autoscaler. */}}
   {{- if not $svc.autoscaling.enabled }}
   replicas: {{ $svc.replicaCount }}
   {{- end }}
-  {{- /* Default is 10. Rollback here means reverting the commit and letting
-         ArgoCD sync, not `kubectl rollout undo`, so old ReplicaSets have no
-         job beyond taking up space. */}}
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app: {{ $name }} # immutable — changing it needs a delete + recreate
+      app: {{ $name }}
   template:
     metadata:
       labels:
-        app: {{ $name }} # must match the selector above
+        app: {{ $name }}
         app.kubernetes.io/name: {{ $name }}
         app.kubernetes.io/component: microservice
         app.kubernetes.io/part-of: iep
       annotations:
-        {{- /* Kubernetes does not restart Pods when a ConfigMap or Secret read
-               via envFrom changes. Hashing the rendered config into the Pod
-               template is what makes the Deployment roll. */}}
+        {{- /* ConfigMap/Secret changes do not restart Pods; the hash forces a roll. */}}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
         {{- if $.Values.secrets.create }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") $ | sha256sum }}
@@ -39,14 +33,8 @@ spec:
     spec:
       containers:
         - name: {{ $name }}
-          {{- /* `with` runs its block only when registry is non-empty, so an
-                 empty registry contributes literally nothing and the image is
-                 just "iep-auth:latest". trimSuffix makes a trailing slash in
-                 the value harmless either way. */}}
           image: "{{ with $.Values.registry }}{{ trimSuffix "/" . }}/{{ end }}{{ $svc.image.repository }}:{{ $svc.image.tag }}"
-          {{- /* Explicit, because Kubernetes defaults this to Always for a
-                 :latest tag — which would try to pull local images from Docker
-                 Hub and fail. Correct for immutable SHA tags too. */}}
+          {{- /* Kubernetes defaults to Always for :latest, which pulls from Docker Hub. */}}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -56,9 +44,6 @@ spec:
                 name: iep-config
             - secretRef:
                 name: iep-secret
-          {{- /* startup: allows a slow first boot (auth runs create_all and
-                 seeds the director user) without making liveness lenient.
-                 readiness: "send traffic here". liveness: "restart it". */}}
           startupProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 5

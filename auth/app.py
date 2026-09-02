@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import sys
 import logging
@@ -18,9 +17,6 @@ from models import User ,db, hash_password, verify_password
 
 
 # ---- structured logging ------------------------------------------------------
-# One JSON object per line on stdout. Loki stores lines verbatim, so the format
-# only matters at query time: `| json` then turns every key below into a
-# filterable label without a regex.
 _LOG_STD_ATTRS = set(
     vars(logging.LogRecord("", 0, "", 0, "", (), None))
 ) | {"message", "asctime", "taskName"}
@@ -36,8 +32,6 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        # Anything passed as logger.info("...", extra={"order_uuid": x}) lands
-        # on the record as a plain attribute. Emit whatever is not standard.
         for key, value in record.__dict__.items():
             if key not in _LOG_STD_ATTRS:
                 payload[key] = value
@@ -61,8 +55,6 @@ log = logging.getLogger("iep.auth")
 from prometheus_client import Counter, Histogram
 from prometheus_flask_exporter import PrometheusMetrics
 
-# Module scope: create_app() may run more than once, and a duplicate
-# registration raises.
 LOGIN_TOTAL = Counter("iep_login_total", "Login attempts by result", ["result"])
 for _result in ("success", "invalid_credentials", "bad_request"):
     LOGIN_TOTAL.labels(result=_result)
@@ -79,12 +71,9 @@ DB_DURATION = Histogram(
 )
 
 
-# Listen on the Engine CLASS, not an instance: Flask-SQLAlchemy builds the
-# engine inside db.init_app(), so no instance exists at import time.
-# Module scope, because registering twice fires the listener twice.
+# Engine CLASS, not an instance: no instance exists at import time.
 @event.listens_for(Engine, "before_cursor_execute")
 def _sql_start(conn, cursor, statement, *args):
-    # conn.info survives between the two events, so the start time has a home.
     conn.info["_iep_t0"] = time.perf_counter()
 
 
@@ -162,7 +151,6 @@ def create_app():
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
     JWTManager(app)
 
-    # Adds /metrics and RED metrics per route.
     PrometheusMetrics(app)
 
     db.init_app(app)
@@ -239,8 +227,6 @@ def create_app():
         
         user = User.query.filter_by(email=email).first()
         if user is None or not verify_password(password,user.password_hash):
-            # One label for both cases. Splitting them would leak which
-            # addresses exist.
             LOGIN_TOTAL.labels(result="invalid_credentials").inc()
             return jsonify ({"message":"Invalid credentials."}), 400
         

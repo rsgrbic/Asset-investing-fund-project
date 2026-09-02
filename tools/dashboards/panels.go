@@ -6,18 +6,14 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
-// target is one query on a panel: the PromQL plus the legend text.
 type target struct {
 	expr   string
 	legend string
 }
 
-// panelOpts collects the few things that differ between our panels. Everything
-// else is identical, which is the whole reason this file exists.
 type panelOpts struct {
 	title string
-	// desc becomes the little "i" tooltip in the top-left of the panel. It is
-	// the only place a dashboard can carry a comment, because JSON has none.
+	// Becomes the panel's "i" tooltip; the only place to annotate JSON.
 	desc     string
 	unit     string // grafana unit id: "s", "bytes", "ops", "reqps", "percentunit", "short"
 	decimals *float64
@@ -27,7 +23,6 @@ type panelOpts struct {
 
 func decimals(n float64) *float64 { return &n }
 
-// panel builds one timeseries panel. Half width, so two sit side by side.
 func panel(o panelOpts) *timeseries.PanelBuilder {
 	fill := 8.0
 	stack := common.StackingModeNone

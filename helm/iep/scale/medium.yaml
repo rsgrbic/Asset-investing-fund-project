@@ -1,16 +1,7 @@
-# =============================================================================
-# SCALE: MEDIUM — a mid-size firm. Tens of concurrent users, steady daily use.
-#
-#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
-#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/medium.yaml
-#
-# First tier where autoscaling earns its keep. Needs metrics-server in the
-# cluster or the HPA silently does nothing.
-# =============================================================================
+# SCALE: MEDIUM — first tier with autoscaling. Needs metrics-server or HPAs do nothing.
 
 services:
   auth:
-    # Two replicas so a restart or node drain doesn't take logins down.
     replicaCount: 2
     resources:
       requests: { cpu: 100m, memory: 128Mi }
@@ -19,7 +10,6 @@ services:
       enabled: false
 
   employee:
-    # The workhorse — search and order creation. Scales with headcount.
     replicaCount: 2
     resources:
       requests: { cpu: 100m, memory: 128Mi }
@@ -31,9 +21,7 @@ services:
       targetCPUUtilizationPercentage: 70
 
   director:
-    # STILL 1, and this is the scaling ceiling of the whole system. The
-    # background Finalized-event listener is in-memory, so director cannot be
-    # replicated. Approvals are low-volume so it holds fine here.
+    # Still 1 — the in-memory vote listener cannot be replicated.
     replicaCount: 1
     resources:
       requests: { cpu: 150m, memory: 192Mi }

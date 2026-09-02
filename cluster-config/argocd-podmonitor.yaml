@@ -1,19 +1,5 @@
-# ArgoCD's own metrics. Applied by hand, like everything in this directory.
-#
-# A PodMonitor, not a ServiceMonitor. This ArgoCD install ships no metrics
-# Services at all -- `kubectl get svc -n argocd` lists only http, grpc, redis
-# and webhook ports. The containers do expose named `metrics` ports, so
-# selecting pods works where selecting Services cannot.
-#
-#   application-controller    :8082  argocd_app_info, sync and reconcile timing
-#   server                    :8083  API server
-#   repo-server               :8084  git fetch and manifest render timing
-#   applicationset-controller :8080
-#   dex-server                :5558
-#   notifications-controller  :9001
-#
-# `port: metrics` selects by NAME, so argocd-redis has no such port and
-# produces no target. No exclusion list is needed.
+# PodMonitor, not ServiceMonitor: this ArgoCD has no metrics Services.
+# Pods expose named `metrics` ports; redis has none, so no exclusion needed.
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
@@ -26,10 +12,7 @@ spec:
     matchLabels:
       app.kubernetes.io/part-of: argocd
     matchExpressions:
-      # dex declares a metrics port but never binds it. It serves telemetry
-      # only when its config carries a telemetry.http section, and argocd-cm
-      # holds no dex.config at all, so no SSO connector is set up. The port
-      # refuses every connection, which would leave one target down for ever.
+      # dex declares a metrics port but never binds it; permanent TargetDown.
       - key: app.kubernetes.io/name
         operator: NotIn
         values:

@@ -10,7 +10,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate # ReadWriteOnce PVC — see mysql.yaml
+    type: Recreate
   selector:
     matchLabels:
       app: mongo
@@ -36,10 +36,7 @@ spec:
               command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
             initialDelaySeconds: 10
             periodSeconds: 10
-            {{- /* mongosh is a Node.js binary and takes 1-2s just to start, so
-                   the 1s default timeoutSeconds can never pass on a small node
-                   — the probe is killed before mongo is even asked anything.
-                   Works locally only because a dev machine starts it faster. */}}
+            {{- /* mongosh startup takes 1-2s; default 1s timeout always fails. */}}
             timeoutSeconds: 10
           resources:
             {{- toYaml .Values.infra.mongo.resources | nindent 12 }}

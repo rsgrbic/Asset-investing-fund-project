@@ -1,20 +1,4 @@
-{{/*
-Prometheus exporter for Redis.
-
-Redis is the order queue: the employee -> director handoff lives in it. It runs
-with AOF on, no maxmemory and no eviction policy, under a 256Mi container
-limit. So a queue that stops draining grows until the pod is OOMKilled and
-pending orders are lost. `iep_pending_orders` says the count is climbing.
-`redis_memory_used_bytes` says how close that is to the limit, which the count
-alone cannot, because order size varies.
-
-The exporter measures nothing itself. It connects as an ordinary Redis client,
-runs INFO ALL and DBSIZE on each scrape, and reformats the reply.
-
-Mongo and MySQL exporters were considered and dropped: the per-service counters
-in the apps already cover operation counts and latency, and volume fill is
-covered by kubelet_volume_stats_available_bytes.
-*/}}
+{{/* Redis exporter. Connects as an ordinary client and reformats INFO/DBSIZE. */}}
 {{- if and .Values.monitoring.enabled .Values.monitoring.exporters.enabled }}
 {{- $ex := .Values.monitoring.exporters }}
 ---

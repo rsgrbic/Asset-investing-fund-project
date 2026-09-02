@@ -1,14 +1,4 @@
-# =============================================================================
-# SCALE: SMALL — a small business. A handful of concurrent users, one office.
-#
-#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
-#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/small.yaml
-#
-# Scale is a SEPARATE axis from environment. values.yaml / values-hosted.yaml
-# decide *where* it runs; this file decides *how big*. Stack both with -f.
-#
-# Fits comfortably on a single 2-vCPU node.
-# =============================================================================
+# SCALE: SMALL — fits on a single 2-vCPU node.
 
 services:
   auth:
@@ -24,8 +14,12 @@ services:
     resources:
       requests: { cpu: 50m, memory: 96Mi }
       limits: { cpu: 250m, memory: 256Mi }
+    # The only autoscaled service. auth is low-volume, director cannot replicate.
     autoscaling:
-      enabled: false
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 70
 
   director:
     replicaCount: 1

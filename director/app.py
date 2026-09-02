@@ -20,9 +20,6 @@ from bson.errors import InvalidId
 
 
 # ---- structured logging ------------------------------------------------------
-# One JSON object per line on stdout. Loki stores lines verbatim, so the format
-# only matters at query time: `| json` then turns every key below into a
-# filterable label without a regex.
 _LOG_STD_ATTRS = set(
     vars(logging.LogRecord("", 0, "", 0, "", (), None))
 ) | {"message", "asctime", "taskName"}
@@ -38,8 +35,6 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        # Anything passed as logger.info("...", extra={"order_uuid": x}) lands
-        # on the record as a plain attribute. Emit whatever is not standard.
         for key, value in record.__dict__.items():
             if key not in _LOG_STD_ATTRS:
                 payload[key] = value
@@ -63,8 +58,6 @@ log = logging.getLogger("iep.director")
 from prometheus_client import Counter, Gauge, Histogram
 from prometheus_flask_exporter import PrometheusMetrics
 
-# Module scope, not create_app(): a second create_app() call would otherwise
-# register the same metric name twice and raise.
 VOTING_THREADS = Gauge(
     "iep_voting_threads_active",
     "Vote watcher threads alive in this process",
@@ -80,10 +73,8 @@ VOTING_OUTCOME = Counter(
     "How a vote ended",
     ["outcome"],
 )
-# Create the four child series at import. A labelled Counter has no series
-# until its first .inc(), and increase() over a window with no data returns
-# nothing at all -- not 0. An alert on a metric that does not exist never
-# fires and never shows an error, so the silence looks like health.
+# A labelled Counter has no series until .inc(); an alert on a missing
+# metric is silently never evaluated.
 for _outcome in ("approved", "rejected", "timeout", "filter_error"):
     VOTING_OUTCOME.labels(outcome=_outcome)
 PENDING_ORDERS = Gauge("iep_pending_orders", "Orders waiting in Redis")
@@ -103,7 +94,7 @@ DB_DURATION = Histogram(
 
 
 class _MongoMetrics(monitoring.CommandListener):
-    """Tracks Mongo commands. pymongo provides a base class."""
+    """Tracks Mongo wire commands."""
 
     def started(self, event):
         pass
@@ -116,14 +107,11 @@ class _MongoMetrics(monitoring.CommandListener):
         DB_OPS.labels("mongo", event.command_name, "error").inc()
 
 
-# Process-wide, so every MongoClient is covered. Registered at module scope:
-# a second create_app() call would otherwise add a second listener and the
-# counts would double.
 monitoring.register(_MongoMetrics())
 
 
 class _MeteredRedis(Redis):
-    """Superclass that wraps Redis client to measure operations."""
+    """Wraps execute_command to measure operations."""
 
     def execute_command(self, *args, **kwargs):
         op = args[0] if args else "unknown"
@@ -316,11 +304,7 @@ def create_app():
                         )
                         return
                 except Exception as exc:
-                    # This was a bare `pass`. Swallowing is still right -- one
-                    # failed read must not abandon the vote -- but it must not
-                    # be silent. Throttled to one line a minute: the loop runs
-                    # twice a second for up to an hour, so an unthrottled log
-                    # would be 7200 lines per broken vote.
+                    # Throttled to 1/min: the loop runs 2/s for up to an hour.
                     poll_errors += 1
                     now = time.time()
                     if poll_errors == 1 or now - last_error_logged >= 60:
@@ -355,7 +339,6 @@ def create_app():
     app.config["JWT_SECRET_KEY"]= os.environ.get("JWT_SECRET_KEY","HARDCODED")
     JWTManager(app)
 
-    # Adds /metrics and RED metrics per route.
     PrometheusMetrics(app)
     
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
@@ -369,7 +352,7 @@ def create_app():
     _pending_last = {"value": 0.0}
 
     def _count_pending_orders():
-        """"Counts pending orders in redis once /metrics is called."""
+        """Called at scrape time by the gauge's set_function."""
         try:
             _pending_last["value"] = float(
                 sum(1 for _ in redis_client.scan_iter(match=f"{PENDING_ORDER_PREFIX}*"))
@@ -420,8 +403,7 @@ def create_app():
         ]
         statistics.sort(key= lambda sort: (-sort["earned"],sort["spent"],sort["category"]))
 
-        # clear() first: a category that disappears would otherwise keep
-        # reporting its last value forever.
+        # A disappeared category would otherwise keep its last value.
         ASSETS_VALUE.clear()
         for row in statistics:
             ASSETS_VALUE.labels(category=row["category"], kind="spent").set(row["spent"])

@@ -1,8 +1,3 @@
-{{/*
-ClusterIP, not LoadBalancer. The raw manifests in kubernetes/ used
-LoadBalancer for all three, which on AKS is three separately billed public IPs.
-Everything now enters through the single ingress controller.
-*/}}
 {{- range $name, $svc := .Values.services }}
 ---
 apiVersion: v1

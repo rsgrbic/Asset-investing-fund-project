@@ -1,8 +1,3 @@
-{{/*
-Non-secret env for all three services. The URLs are the in-cluster Service
-names — set explicitly rather than relying on the apps' built-in defaults,
-since director's MONGO_URL default is localhost and would silently not work.
-*/}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

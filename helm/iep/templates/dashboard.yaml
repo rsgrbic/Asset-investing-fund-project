@@ -1,19 +1,7 @@
 {{/*
-Grafana dashboards, shipped as ConfigMaps.
-
-A dashboard built in the Grafana UI lives in Grafana's own database inside the
-pod. That pod has no volume, so a restart, a redeploy or a node migration
-erases it. Shipping it here is what puts it in git and through the same CI and
-deploy-branch path as everything else.
-
-kube-prometheus-stack runs a sidecar next to Grafana that watches for
-ConfigMaps labelled `grafana_dashboard: "1"`, and its searchNamespace is ALL,
-so this object works from the iep namespace. No Grafana restart is needed.
-
-The JSON lives in dashboards/, NOT under templates/. Helm never templates
-files outside templates/, and .Files.Get returns them verbatim. That matters:
-Grafana legend formats use {{ "{{outcome}}" }} syntax, which Helm would
-otherwise try to evaluate and fail on.
+JSON lives in dashboards/, not templates/. .Files.Get returns it verbatim,
+which avoids Helm trying to evaluate Grafana's {{ "{{outcome}}" }} legends.
+The sidecar picks up ConfigMaps labelled grafana_dashboard: "1".
 */}}
 {{- if .Values.monitoring.enabled }}
 apiVersion: v1

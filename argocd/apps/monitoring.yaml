@@ -1,9 +1,5 @@
-# kube-prometheus-stack: Prometheus Operator + Prometheus + Alertmanager +
-# Grafana + node-exporter + kube-state-metrics.
-#
-# sync-wave -1 puts this ahead of the iep Application, so the ServiceMonitor and
-# PrometheusRule CRDs exist before the chart renders any. Same ordering problem
-# cert-manager's CRDs already solved.
+# kube-prometheus-stack at wave -1 so its CRDs exist before iep renders
+# ServiceMonitors and PrometheusRules.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,13 +17,12 @@ spec:
       values: |
         prometheus:
           prometheusSpec:
-            # Both default to true, which restricts the operator to objects
-            # carrying its own release label. Our ServiceMonitors come from the
-            # iep chart and would be ignored with no error anywhere.
+            # Default true = only picks up objects with the operator's own
+            # release label. Our monitors come from the iep chart, so false.
             serviceMonitorSelectorNilUsesHelmValues: false
             podMonitorSelectorNilUsesHelmValues: false
             ruleSelectorNilUsesHelmValues: false
-            # Both caps matter on a single node: whichever is hit first wins. 
+            # Whichever cap is hit first wins.
             retention: 7d
             retentionSize: 8GB
             resources:
@@ -42,9 +37,7 @@ spec:
                     requests:
                       storage: 10Gi
 
-        # AKS manages the control plane, so none of these are scrapeable. Left
-        # enabled they become permanently-down targets and fire their default
-        # alerts forever.
+        # AKS-managed control plane; these targets are unreachable.
         kubeControllerManager:
           enabled: false
         kubeScheduler:
@@ -68,33 +61,24 @@ spec:
               limits: { cpu: 200m, memory: 256Mi }
 
         grafana:
-          # Password comes from Key Vault via ESO — see cluster-config/eso-secrets.yaml.
-          # This secret must exist before the pod starts or it stays in CreateContainerConfigError.
+          # From Key Vault via ESO; must exist before the pod starts.
           admin:
             existingSecret: grafana-admin
             userKey: admin-user
             passwordKey: admin-password
-          # Measured, not guessed: the container sat at 507Mi against a 512Mi
-          # limit and was OOMKilled twice. Grafana 13 with ~33 provisioned
-          # dashboards does not fit in 512Mi.
+          # OOMKilled at 512Mi with ~33 dashboards provisioned.
           resources:
             requests: { cpu: 10m, memory: 512Mi }
             limits: { cpu: 500m, memory: 1Gi }
-          # Both sidecars ran with no limits at all. They sit at ~73Mi each and
-          # only watch ConfigMaps, so 128Mi is generous. `sidecar.resources`
-          # applies to every sidecar the chart creates.
+          # Applies to every sidecar the chart creates.
           sidecar:
             resources:
               requests: { cpu: 5m, memory: 64Mi }
               limits: { cpu: 100m, memory: 128Mi }
           env:
-            # Go's GC knows nothing about the cgroup limit, so by default it
-            # grows the heap until the kernel kills the process. GOMEMLIMIT
-            # makes it collect harder as it approaches this figure. Kept below
-            # the limit above so the GC acts before the OOM killer does.
+            # Below the memory limit so GC acts before the OOM killer.
             GOMEMLIMIT: "900MiB"
-          # Grafana needs to know Loki exists. The stack provisions only its
-          # own Prometheus datasource; anything else is added here.
+          # The stack only provisions its own Prometheus datasource.
           additionalDataSources:
             - name: Loki
               type: loki
@@ -102,15 +86,12 @@ spec:
               access: proxy
               url: http://loki.monitoring.svc:3100
               jsonData:
-                # Links a log line back to a trace if tracing ever arrives.
                 maxLines: 1000
           ingress:
             enabled: true
             ingressClassName: nginx
             annotations:
-              # The ClusterIssuer is created by the iep chart at wave 0, i.e.
-              # after this. cert-manager retries, so the cert appears a minute
-              # late on a from-zero install rather than failing.
+              # ClusterIssuer comes from iep at wave 0; cert-manager retries.
               cert-manager.io/cluster-issuer: letsencrypt
             hosts:
               - grafana.20.215.32.142.sslip.io
@@ -123,14 +104,10 @@ spec:
     namespace: monitoring
   syncPolicy:
     automated:
-      # prune stays OFF for the add-ons. These charts own CRDs, and pruning a
-      # CRD deletes every custom resource of that kind with it.
+      # Pruning a CRD deletes every resource of that kind.
       prune: false
       selfHeal: true
     syncOptions:
-      # The monitoring namespace does not exist yet. Without this the sync fails
-      # before creating anything.
       - CreateNamespace=true
-      # The Prometheus and Alertmanager CRDs exceed the annotation size limit
-      # client-side apply uses to store last-applied config.
+      # CRDs exceed the annotation size limit of client-side apply.
       - ServerSideApply=true

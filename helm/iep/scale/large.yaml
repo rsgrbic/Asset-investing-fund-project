@@ -1,31 +1,8 @@
-# =============================================================================
-# SCALE: LARGE — a large firm. Hundreds of users, continuous load, multi-node
-# cluster.
+# SCALE: LARGE — multi-node cluster, hundreds of users.
 #
-#   helm upgrade --install iep ./helm/iep -n iep --create-namespace \
-#     -f helm/iep/values-hosted.yaml -f helm/iep/scale/large.yaml
-#
-# ---------------------------------------------------------------------------
-# READ THIS BEFORE USING THIS TIER
-#
-# `director` cannot be replicated, so it is a hard ceiling on the whole system.
-# POST /decision spawns an in-memory thread that waits for the on-chain
-# Finalized event before writing to MongoDB; a second replica would not share
-# it, and a restart loses every in-flight approval. At this scale that stops
-# being a footnote:
-#
-#   - approvals become a single point of failure with no redundancy
-#   - a director pod restart silently drops pending votes
-#   - vertical scaling is the only lever left for it
-#
-# The fix is architectural, not a values change: move the listener into a
-# separate worker Deployment that consumes from Redis, so approvals survive
-# restarts and director itself becomes stateless and replicable.
-#
-# Also worth reinstating here, but deliberately not in the chart today:
-# PodDisruptionBudgets (maxUnavailable: 1) — pointless on one or two nodes,
-# genuinely useful once node drains and rolling AKS upgrades are routine.
-# ---------------------------------------------------------------------------
+# director stays at 1: its in-memory vote listener cannot be replicated.
+# At this scale that is a hard ceiling. The fix is architectural — extract the
+# listener into a separate worker that consumes from Redis.
 
 services:
   auth:
@@ -48,13 +25,11 @@ services:
       enabled: true
       minReplicas: 3
       maxReplicas: 12
-      # Lower target than medium: leave headroom, because scale-up may have to
-      # wait for the cluster autoscaler to add a node once existing ones fill.
+      # Lower than medium: leave headroom while cluster autoscaler adds a node.
       targetCPUUtilizationPercentage: 60
 
   director:
-    # Cannot go above 1 — see the warning above. Given more CPU instead, since
-    # vertical is the only direction available.
+    # Cannot go above 1; vertical scaling only.
     replicaCount: 1
     resources:
       requests: { cpu: 300m, memory: 384Mi }
@@ -63,10 +38,8 @@ services:
       enabled: false
 
 infra:
-  # At this scale in-cluster single-Pod databases are the wrong answer: no HA,
-  # no failover, no point-in-time restore, and a node drain takes them down.
-  # This tier assumes migrating to Azure Database for MySQL, Cosmos DB and
-  # Azure Cache for Redis. The sizes below keep it runnable in the meantime.
+  # Single-Pod databases do not scale here; migrate to Azure managed services.
+  # Sizes below keep it runnable in the meantime.
   mysql:
     storage: 64Gi
     resources:

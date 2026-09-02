@@ -1,12 +1,4 @@
-{{/*
-One ServiceMonitor for all three microservices. The Services already share
-`part-of: iep` and `component: microservice`, so a label selector covers them
-without naming each one.
-
-Requires the Prometheus Operator CRDs. argocd/apps/monitoring.yaml runs at
-sync-wave -1 for that reason. Gated by monitoring.enabled so a cluster without
-the operator can still install this chart.
-*/}}
+{{/* Gated by monitoring.enabled; requires Prometheus Operator CRDs from wave -1. */}}
 {{- if .Values.monitoring.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -25,18 +17,13 @@ spec:
     matchNames:
       - {{ .Release.Namespace }}
   endpoints:
-    # By port NAME, not number. The three services listen on 5000, 5001 and
-    # 5002, and all three name that port `http`.
     - port: http
       path: {{ .Values.monitoring.path | quote }}
       interval: {{ .Values.monitoring.interval | quote }}
       scrapeTimeout: {{ .Values.monitoring.scrapeTimeout | quote }}
 {{- if .Values.monitoring.exporters.enabled }}
 ---
-{{/*
-Separate from the one above because the exporters listen on a port named
-`metrics`, not `http`, and one endpoint entry cannot cover both names.
-*/}}
+{{/* Exporters use port `metrics`, not `http`. */}}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

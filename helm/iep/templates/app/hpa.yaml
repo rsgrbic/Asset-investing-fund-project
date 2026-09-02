@@ -1,20 +1,4 @@
-{{/*
-HorizontalPodAutoscaler. Every 15s:
-
-    desiredReplicas = ceil[ currentReplicas x (currentUtil / targetUtil) ]
-
-where currentUtil is the mean across Pods of
-(pod CPU usage / pod CPU REQUEST) x 100. The REQUEST is the denominator, not
-the limit — with no cpu request there is nothing to divide by, TARGET shows
-<unknown>, and it never scales.
-
-Needs metrics-server in the cluster (`kubectl top pods` is the test — not
-installed by default on Docker Desktop) and `replicas` absent from the
-Deployment, which deployment.yaml handles.
-
-Full explanation, including why CPU is a weak signal for these I/O-bound
-services and what replaces it in stage 5: helm/README.md §5.
-*/}}
+{{/* Needs metrics-server and a cpu request; deployment.yaml omits replicas when active. */}}
 {{- range $name, $svc := .Values.services }}
 {{- if $svc.autoscaling.enabled }}
 ---

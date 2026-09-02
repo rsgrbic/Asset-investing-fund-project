@@ -17,17 +17,11 @@ jobs:
           python-version: "3.10"
           cache: pip
 
-      # 'eth-typing<5' is load-bearing: web3 6.5.0 registers a pytest plugin
-      # (web3.tools.pytest_ethereum) that imports eth_typing.ContractName,
-      # removed in eth-typing 5. Without the pin pytest cannot start at all.
-      # Same pin as test/requirements.txt. Quoted so the shell does not read
-      # '<' as a redirect. pip warns about eth-utils wanting >=5 — expected.
+      # eth-typing>=5 breaks web3's pytest plugin; without the pin pytest cannot start.
       - name: Install service dependencies
         run: pip install pytest 'eth-typing<5' -r auth/requirements.txt -r director/requirements.txt
 
       - name: Run unit tests
-        # web3 registers a pytest plugin that crashes on import with newer
-        # eth-typing. These tests need no plugins, so don't load any.
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: pytest tests/unit -q
@@ -44,8 +38,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The runner's default buildx driver is `docker`, which cannot export a
-      # cache. This creates a docker-container builder, which can.
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -54,7 +46,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build only on main pushes.
       - uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.service }}
@@ -63,8 +54,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/iep-${{ matrix.service }}:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/iep-${{ matrix.service }}:latest
-          # Links the package to this repo, so Actions inherits write access
-          # instead of needing it granted by hand in the package settings.
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
@@ -75,22 +64,18 @@ jobs:
     needs: images
     runs-on: ubuntu-latest
     permissions:
-      contents: write # commits the image tags back to main
+      contents: write
       packages: write
-    # Two merges landing at once would otherwise race on the git push.
     concurrency:
       group: main-writeback
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
-          # Needed to diff against the previous commit; the default shallow
-          # clone has no history to compare with.
           fetch-depth: 0
 
       - uses: azure/setup-helm@v4
 
-      # Save Chart.yaml's dependencies.
       - name: Register subchart repos
         run: |
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
@@ -103,13 +88,9 @@ jobs:
       - name: Lint
         run: helm lint ./helm/iep
 
-      # A real API server to validate against.
       - uses: helm/kind-action@v1
 
-      # values-hosted.yaml renders a ServiceMonitor, and kind has no Prometheus
-      # Operator. Without the CRD the dry-run below fails with
-      # "no matches for kind". Pinned to the operator version
-      # kube-prometheus-stack 88.5.0 installs in the cluster.
+      # kind has no Prometheus Operator; without these CRDs the dry-run fails.
       - name: Install the Prometheus Operator CRDs
         run: |
           set -euo pipefail
@@ -117,19 +98,14 @@ jobs:
             kubectl apply --server-side -f "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.93.1/example/prometheus-operator-crd/monitoring.coreos.com_$crd.yaml"
           done
 
-      # `kubectl apply --dry-run=server` validates each object.
-      - name: Validate every env config 
-      # clusterIssuer is emptied because cert-manager's CRDs are not
-      # installed here, so a ClusterIssuer would fail with "no matches for kind"
+      # clusterIssuer emptied: cert-manager CRDs not installed here.
+      - name: Validate every env config
         run: |
           set -euo pipefail
           kubectl create namespace iep
           for env in values.yaml values-hosted.yaml; do
             for scale in small medium large; do
               echo "checking $env + $scale"
-              # Throwaway values so the Secret template is created.
-              # -n iep so rendered objects carry namespace: iep. Without it
-              # Release.Namespace is "default" and kubectl rejects the mismatch.
               helm template iep ./helm/iep \
                 -n iep \
                 -f "helm/iep/$env" \
@@ -143,12 +119,8 @@ jobs:
             done
           done
 
-      # Renders the chart and commits the OUTPUT to `deploy`, the branch ArgoCD
-      # watches. main never receives a bot commit, and because each run starts
-      # from the tip of `deploy` there is nothing to rebase — which is what two
-      # near-simultaneous pushes used to conflict on.
-      # Commits made with GITHUB_TOKEN do not trigger workflow runs, which is
-      # what stops this looping — that stops being true with a PAT.
+      # Commit rendered output to `deploy`, the branch ArgoCD watches.
+      # GITHUB_TOKEN commits do not trigger workflow runs, so no loop.
       - name: Check out the deploy branch
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/checkout@v4
@@ -156,9 +128,6 @@ jobs:
           ref: deploy
           path: deploy-branch
 
-      # The SHA reaches the cluster only through this render. No values file
-      # stores it, so none of them can go stale. All three scale profiles are
-      # rendered; argocd/apps/iep.yaml picks one with `path:`.
       - name: Render manifests
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -182,8 +151,6 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Stage before comparing: `git diff` ignores untracked files, so on the
-          # first render it would report "no change" and push nothing.
           git add manifests
           if git diff --cached --quiet; then
             echo "::notice::rendered output unchanged"
@@ -192,8 +159,7 @@ jobs:
             git push
           fi
 
-      # Editing Chart.yaml is the release signal. No edit, no publish — so a
-      # push that leaves version: alone cannot overwrite a published chart.
+      # Only publishes when Chart.yaml version changes.
       - name: Did Chart.yaml change?
         id: chart_changed
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

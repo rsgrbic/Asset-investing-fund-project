@@ -9,8 +9,7 @@ metadata:
     app.kubernetes.io/part-of: iep
 spec:
   replicas: 1
-  {{- /* Recreate, not RollingUpdate: the PVC is ReadWriteOnce, so a second Pod
-         could never mount the volume while the first still holds it. */}}
+  {{- /* ReadWriteOnce PVC; a second Pod could never mount it. */}}
   strategy:
     type: Recreate
   selector:
@@ -30,9 +29,6 @@ spec:
           ports:
             - name: mysql
               containerPort: 3306
-          {{- /* Two explicit keys, not `envFrom` the whole app Secret — the
-                 original chart handed this container JWT_SECRET_KEY and every
-                 DIRECTOR_* credential, none of which it has any use for. */}}
           env:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:

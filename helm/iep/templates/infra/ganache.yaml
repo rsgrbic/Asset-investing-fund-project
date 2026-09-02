@@ -34,8 +34,7 @@ spec:
           ports:
             - name: rpc
               containerPort: 8545
-          {{- /* JSON-RPC has no GET health endpoint, so the probe posts a real
-                 eth_blockNumber call and checks for 200. */}}
+          {{- /* JSON-RPC has no GET health endpoint; probe posts eth_blockNumber. */}}
           readinessProbe:
             exec:
               command:

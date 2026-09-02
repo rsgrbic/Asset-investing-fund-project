@@ -1,17 +1,4 @@
-{{/*
-A PVC is a REQUEST for storage; the StorageClass decides how it is satisfied —
-hostpath on Docker Desktop, an Azure managed disk on AKS. That is the only
-thing that differs between local and hosted.
-
-These are ordinary templated resources, so Helm tracks them and `helm uninstall`
-DELETES them — and because the PVs use the Delete reclaim policy, the data goes
-with them. (The widely repeated "helm keeps your PVCs" applies to StatefulSet
-volumeClaimTemplates, which Helm never created and so never removes.)
-
-To keep the databases across an uninstall, annotate these with
-    helm.sh/resource-policy: keep
-and accept that cleaning them up becomes manual.
-*/}}
+{{/* helm uninstall deletes these PVCs and the data with them. */}}
 {{- range $item := list "mysql" "mongo" "redis" }}
 {{- with index $.Values.infra $item }}
 ---

@@ -1,30 +1,9 @@
-// Generates the Grafana dashboards in helm/iep/dashboards/.
+// Generates Grafana dashboards into helm/iep/dashboards/.
+// Run: go -C tools/dashboards run . ../../helm/iep/dashboards
+// The JSON is committed; nothing generates it at deploy time.
 //
-// Why this exists: a dashboard is 10-40 kB of generated JSON, and JSON has no
-// comment syntax. Written by hand it is unreviewable -- a diff shows twenty
-// changed lines and none of them says why. Here the queries sit next to the
-// reason for them, and `go build` catches a misspelled field that Grafana
-// would otherwise ignore in silence.
-//
-// Run from the repo root:
-//
-//	go -C tools/dashboards run . ../../helm/iep/dashboards
-//
-// The JSON it writes is committed. Nothing generates it at deploy time.
-//
-// On the dashboard.DashboardBuilder deprecation warning: it says to prefer
-// dashboardv2.Dashboard. Do not. v2 is a different document -- a Kubernetes
-// resource with apiVersion/kind/spec and an `elements` map instead of a
-// `panels` array. Grafana's file provisioner, which is what the sidecar feeds,
-// rejects it outright:
-//
-//	dashboard appears to be in v2 format. Please use the
-//	/apis/dashboard.grafana.app/v2 API
-//
-// Loading v2 needs the kubernetesDashboards feature toggle and a provider
-// declaring apiVersion dashboard.grafana.app/v2. The grafana-operator has the
-// same split: its GrafanaDashboard CR is v1-only, and v2 needs GrafanaManifest.
-// So v1 stays until the delivery path changes, not before.
+// Ignore the DashboardBuilder deprecation: v2 is a Kubernetes resource
+// the file provisioner rejects. v1 stays until the delivery path changes.
 package main
 
 import (
@@ -53,8 +32,7 @@ func appDashboard() *dashboard.DashboardBuilder {
 		Time("now-6h", "now").
 		Timezone("browser").
 
-		// increase() extrapolates to the edges of its range, so a single event
-		// can report as 1.03. round() plus decimals 0 keeps a count a count.
+		// round() + decimals 0: increase() extrapolates, so 1 event can read 1.03.
 		WithPanel(panel(panelOpts{
 			title:    "Vote outcomes",
 			desc:     "How votes ended. timeout means the vote deadline passed with no Finalized event: the watcher polls an event filter inside a bare except, so a dropped web3 connection is swallowed and the order stays pending. filter_error means create_filter raised and the watcher never started at all.",
@@ -67,8 +45,6 @@ func appDashboard() *dashboard.DashboardBuilder {
 			}},
 		})).
 
-		// The number behind director's replicaCount: 1. One thread per
-		// in-flight vote, all inside one gunicorn worker.
 		WithPanel(panel(panelOpts{
 			title:    "Vote watcher threads in flight",
 			desc:     "One thread per in-flight vote, all in ONE gunicorn worker. This is the constraint that pins director to replicaCount 1. Adding --workers would break every gauge on this dashboard.",
@@ -77,8 +53,6 @@ func appDashboard() *dashboard.DashboardBuilder {
 			targets:  []target{{expr: "iep_voting_threads_active", legend: "{{pod}}"}},
 		})).
 
-		// Blockchain round trip. No HTTP metric can see this: POST /decision
-		// returns 200 immediately and the work happens in a thread afterwards.
 		WithPanel(panel(panelOpts{
 			title: "Vote duration",
 			desc:  "Deploy to Finalized. Buckets top out at 3600s because that is VOTING_DEADLINE_SECONDS. Nothing in the HTTP metrics can measure this.",
@@ -89,7 +63,6 @@ func appDashboard() *dashboard.DashboardBuilder {
 			},
 		})).
 
-		// Two independent views of the same queue. They should agree.
 		WithPanel(panel(panelOpts{
 			title:    "Pending orders: app view vs Redis view",
 			desc:     "director counts keys matching the pending_order prefix. The exporter counts every key in db0. A persistent gap means something writes to Redis that director does not know about.",
@@ -101,8 +74,6 @@ func appDashboard() *dashboard.DashboardBuilder {
 			},
 		})).
 
-		// Attribution. This is the half no exporter can answer: from Mongo's
-		// side every connection looks the same.
 		WithPanel(panel(panelOpts{
 			title:   "Database calls per second",
 			desc:    "Which service drives which backend. Counts WIRE commands, not logical calls -- count_documents() sends aggregate, and scan_iter pages with several SCANs.",
@@ -134,7 +105,6 @@ func appDashboard() *dashboard.DashboardBuilder {
 			}},
 		})).
 
-		// Edge against app. The gap is network plus nginx queueing.
 		WithPanel(panel(panelOpts{
 			title: "HTTP requests per second",
 			desc:  "nginx counts what arrived at the edge; Flask counts what each service served. The difference is traffic nginx rejected or served itself.",
@@ -154,7 +124,6 @@ func redisDashboard() *dashboard.DashboardBuilder {
 		Time("now-6h", "now").
 		Timezone("browser").
 
-		// The pair the IepRedisMemoryHigh alert divides.
 		WithPanel(panel(panelOpts{
 			title: "Memory used against the cap",
 			desc:  "used_memory is the allocator's accounting, not process RSS. maxmemory is enforced against THIS number, so this is the pair that decides when writes start failing.",
