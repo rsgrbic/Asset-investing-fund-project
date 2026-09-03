@@ -40,13 +40,20 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-class _DropProbeAccess(logging.Filter):
+class _AccessLogFilter(logging.Filter):
     def filter(self, record):
         # Matches gunicorn's `r` atom, not the whole line, so a /metrics
         # referer or user agent cannot drop a real request.
         atoms = record.args if isinstance(record.args, dict) else {}
         request = atoms.get("r", "")
-        return "/health" not in request and "/metrics" not in request
+        if "/health" in request or "/metrics" in request:
+            return False
+        method, _, tail = request.partition(" ")
+        record.http_method = method
+        record.http_path = tail.rsplit(" ", 1)[0] if tail else ""
+        status = atoms.get("s", "")
+        record.http_status = int(status) if str(status).isdigit() else status
+        return True
 
 
 def _configure_logging():
@@ -56,8 +63,12 @@ def _configure_logging():
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
-    # Probes and scrapes are ~20 lines/min/pod. Prometheus already counts them.
-    logging.getLogger("gunicorn.access").addFilter(_DropProbeAccess())
+    # gunicorn writes access lines through its own handler in plain text, which
+    # Loki files as detected_level=unknown. Route them to the JSON handler.
+    access = logging.getLogger("gunicorn.access")
+    access.handlers = []
+    access.propagate = True
+    access.addFilter(_AccessLogFilter())
 
 
 _configure_logging()

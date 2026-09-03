@@ -1,5 +1,5 @@
-@authHost = http://localhost:5000
-@empHost = http://localhost:5001
+@authHost = https://auth.20.215.32.142.sslip.io
+@empHost = https://employee.20.215.32.142.sslip.io
 
 ### 0a. Health
 GET {{empHost}}/health
