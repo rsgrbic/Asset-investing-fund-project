@@ -332,7 +332,7 @@ def create_app():
                     if poll_errors == 1 or now - last_error_logged >= 60:
                         last_error_logged = now
                         log.warning(
-                            "vote poll failed, still retrying",
+                            "vote poll failed, retrying",
                             extra={
                                 "order_uuid": order_uuid,
                                 "contract": contract_address,
@@ -386,8 +386,7 @@ def create_app():
         except Exception as exc:
             scrape_errors += 1
             now = time.time()
-            # Log the first failure at once, then once every 5 minutes. Prometheus
-            # calls this on every scrape, and _MeteredRedis already counts each one.
+            # Log the first failure at once, then once every 5 minutes.
             if scrape_errors == 1 or now - last_logged >= 300:
                 last_logged = now
                 log.warning(
@@ -411,8 +410,7 @@ def create_app():
         if err is not None:
             return err
         
-        # One row per category, so unwind before grouping. $toInt truncates the
-        # same way int() did, and both prices are validated positive on write.
+        # One row per category, using mongo's $unwind
         pipeline = [
             {"$unwind": "$categories"},
             {"$group": {

@@ -1,0 +1,15 @@
+services:
+  k6:
+    image: grafana/k6
+    # This directory becomes /scripts, so handleSummary writes summary.json
+    # back here on the host.
+    volumes:
+      - .:/scripts
+    command: run /scripts/showcase.js
+    # -i and -t. Without the tty the progress bar does not render.
+    stdin_open: true
+    tty: true
+    # Docker Desktop resolves host.docker.internal on its own; this line makes
+    # the ganache port-forward reachable on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
