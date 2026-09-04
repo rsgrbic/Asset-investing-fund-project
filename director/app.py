@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager,get_jwt,verify_jwt_in_request
 from pymongo import MongoClient, monitoring
-from collections import defaultdict
+from pymongo.errors import OperationFailure
 import os
 import sys
 import logging
@@ -371,17 +371,30 @@ def create_app():
     redis_client = _MeteredRedis.from_url(redis_url, decode_responses=True)
     PENDING_ORDER_PREFIX = "pending_order:"
 
-    _pending_last = {"value": 0.0}
+    pending_count = 0.0
+    scrape_errors = 0
+    last_logged = 0.0
 
     def _count_pending_orders():
         """Called at scrape time by the gauge's set_function."""
+        nonlocal pending_count, scrape_errors, last_logged
         try:
-            _pending_last["value"] = float(
+            pending_count = float(
                 sum(1 for _ in redis_client.scan_iter(match=f"{PENDING_ORDER_PREFIX}*"))
             )
+            scrape_errors = 0
         except Exception as exc:
-            log.warning("redis scan for pending orders failed", extra={"error": repr(exc)})
-        return _pending_last["value"]
+            scrape_errors += 1
+            now = time.time()
+            # Log the first failure at once, then once every 5 minutes. Prometheus
+            # calls this on every scrape, and _MeteredRedis already counts each one.
+            if scrape_errors == 1 or now - last_logged >= 300:
+                last_logged = now
+                log.warning(
+                    "redis scan for pending orders failed",
+                    extra={"scrape_errors": scrape_errors, "error": repr(exc)},
+                )
+        return pending_count
 
     PENDING_ORDERS.set_function(_count_pending_orders)
     
@@ -398,32 +411,23 @@ def create_app():
         if err is not None:
             return err
         
-        spent = defaultdict(int)
-        earned= defaultdict(int)
-        
-        for asset in assets_collection.find():
-            categories= asset.get("categories",[])
-            try:
-                buying_price= int(asset.get("buying_price") or 0)
-            except (ValueError,TypeError):
-                return jsonify({"Message": "Buying price is not a number"}),501
-            selling_price = asset.get("selling_price") # Can be null, no conversion
-            
-            for category in categories:
-                spent[category]+=buying_price
-                if selling_price is not None:
-                    earned[category]+=int(selling_price)
-            
-        all_categories= set(spent.keys()).union(earned.keys())
-        statistics =[
-            {
-                "category": category,
-                "spent": spent[category],
-                "earned": earned[category]
-            }
-            for category in all_categories
+        # One row per category, so unwind before grouping. $toInt truncates the
+        # same way int() did, and both prices are validated positive on write.
+        pipeline = [
+            {"$unwind": "$categories"},
+            {"$group": {
+                "_id": "$categories",
+                "spent": {"$sum": {"$toInt": {"$ifNull": ["$buying_price", 0]}}},
+                "earned": {"$sum": {"$toInt": {"$ifNull": ["$selling_price", 0]}}},
+            }},
+            {"$project": {"_id": 0, "category": "$_id", "spent": 1, "earned": 1}},
+            {"$sort": {"earned": -1, "spent": 1, "category": 1}},
         ]
-        statistics.sort(key= lambda sort: (-sort["earned"],sort["spent"],sort["category"]))
+        try:
+            statistics = list(assets_collection.aggregate(pipeline))
+        except OperationFailure:
+            # $toInt raises here on a non-numeric price.
+            return jsonify({"Message": "Buying price is not a number"}), 501
 
         # A disappeared category would otherwise keep its last value.
         ASSETS_VALUE.clear()
