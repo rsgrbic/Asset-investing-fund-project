@@ -1,0 +1,12 @@
+# The ExternalSecrets below target iep and monitoring. This Application runs at
+# wave -2, before the apps that would create those namespaces themselves, so a
+# missing namespace would fail the sync and block every later wave.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iep
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring

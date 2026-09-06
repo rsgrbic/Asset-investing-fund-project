@@ -1,0 +1,64 @@
+# Written by hand because the chart's rbac.yaml appends both rbac.rules and
+# rbac.clusterRules with no separator check. An empty list in either one renders
+# a bare `[]` after the rules and the template fails to parse.
+#
+# The ServiceAccounts still come from the chart. Only these two objects are ours.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: iep-alloy
+  labels:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/component: rbac
+rules:
+  # discovery.kubernetes "pods". The node field selector still needs a
+  # cluster-scoped list, so a namespaced Role will not do.
+  # loki.source.file reads the disk, so no pods/log here.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: iep-alloy
+  labels:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: iep-alloy
+subjects:
+  - kind: ServiceAccount
+    name: iep-alloy
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: iep-alloy-events
+  labels:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/component: rbac
+rules:
+  # loki.source.kubernetes_events only.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: iep-alloy-events
+  labels:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: iep-alloy-events
+subjects:
+  - kind: ServiceAccount
+    name: iep-alloy-events
+    namespace: monitoring

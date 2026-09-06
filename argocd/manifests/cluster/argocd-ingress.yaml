@@ -1,5 +1,5 @@
 # ArgoCD is installed by hand, so this is a standalone Ingress rather than a
-# chart value. Applied with kubectl like the rest of cluster-config.
+# chart value. ArgoCD then serves its own UI through it.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

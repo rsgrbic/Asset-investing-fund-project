@@ -1,0 +1,24 @@
+# Plain manifests that used to be applied by hand from cluster-config/.
+# Nothing in this repo needs kubectl now except argocd/root.yaml itself.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iep-cluster-manifests
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsgrbic/Asset-investing-fund-project.git
+    targetRevision: main
+    path: argocd/manifests/cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      # An ExternalSecret owns the Secret it writes. Pruning one takes the
+      # Secret and every Pod that mounts it.
+      prune: false
+      selfHeal: true
