@@ -2684,7 +2684,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: "ghcr.io/rsgrbic/iep-auth:05a217504429f5132464134d207183c46858b618"
+          image: "ghcr.io/rsgrbic/iep-auth:0c8110646d518f24c4f668a15a2a8ef470b21132"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -2740,7 +2740,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:05a217504429f5132464134d207183c46858b618"
+          image: "ghcr.io/rsgrbic/iep-director:0c8110646d518f24c4f668a15a2a8ef470b21132"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -2795,7 +2795,7 @@ spec:
     spec:
       containers:
         - name: employee
-          image: "ghcr.io/rsgrbic/iep-employee:05a217504429f5132464134d207183c46858b618"
+          image: "ghcr.io/rsgrbic/iep-employee:0c8110646d518f24c4f668a15a2a8ef470b21132"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
