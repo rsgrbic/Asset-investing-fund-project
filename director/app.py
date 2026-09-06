@@ -406,6 +406,10 @@ def create_app():
     with open(CONTRACT_PATH) as f:
         contract_artifact = json.load(f)
     
+    @app.get("/proba")
+    def proba():
+        return jsonify({"status":"Uspesno"}),200    
+    
     @app.get("/report")
     def report():
         err = _require_director()

@@ -31,12 +31,9 @@ spec:
           service:
             type: LoadBalancer
             annotations:
-              # Azure probes the nodePort with GET / and drops traffic to nodes
-              # that do not answer 2xx/3xx; nginx returns 404 there because a
-              # probe carries no matching Host header.
+              # Azure probes the nodePort with GET
               service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
-              # The pre-created static IP in iep-rg, so replacing this Service
-              # no longer changes the public address.
+              # The pre-created static IP in iep-rg, so replacing this doesn't change the public address.
               service.beta.kubernetes.io/azure-pip-name: LBalancer_IP
               service.beta.kubernetes.io/azure-load-balancer-resource-group: iep-rg
   destination:
