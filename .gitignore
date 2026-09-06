@@ -26,3 +26,4 @@ helm/**/charts/
 *.tgz
 plan-stage5.md
 JOURNEY.md
+loadtest/summary.json

@@ -128,7 +128,7 @@
         }
       ],
       "title": "Vote duration",
-      "description": "Deploy to Finalized. Buckets top out at 3600s because that is VOTING_DEADLINE_SECONDS. Nothing in the HTTP metrics can measure this.",
+      "description": "Deploy to Finalized. Buckets are packed between 4s and 20s, where votes actually close. A timeout never reaches this metric; it only increments iep_voting_outcome_total{outcome=\"timeout\"}. Nothing in the HTTP metrics can measure this.",
       "transparent": false,
       "gridPos": {
         "h": 8,

@@ -71,14 +71,6 @@ ingress-nginx:
     admissionWebhooks:
       enabled: true
 
-# ---- cert-manager (subchart) -------------------------------------------------
-# Off locally: Let's Encrypt validates over the public internet.
-cert-manager:
-  enabled: false
-  crds:
-    # Helm installs CRDs but never upgrades or deletes them.
-    enabled: true
-
 # ---- Ingress resource --------------------------------------------------------
 ingress:
   enabled: true

@@ -55,7 +55,7 @@ func appDashboard() *dashboard.DashboardBuilder {
 
 		WithPanel(panel(panelOpts{
 			title: "Vote duration",
-			desc:  "Deploy to Finalized. Buckets top out at 3600s because that is VOTING_DEADLINE_SECONDS. Nothing in the HTTP metrics can measure this.",
+			desc:  "Deploy to Finalized. Buckets are packed between 4s and 20s, where votes actually close. A timeout never reaches this metric; it only increments iep_voting_outcome_total{outcome=\"timeout\"}. Nothing in the HTTP metrics can measure this.",
 			unit:  "s",
 			targets: []target{
 				{expr: "histogram_quantile(0.95, sum by (le) (rate(iep_voting_duration_seconds_bucket[30m])))", legend: "p95"},

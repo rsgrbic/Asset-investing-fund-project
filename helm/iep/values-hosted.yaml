@@ -31,9 +31,6 @@ ingress-nginx:
         service.beta.kubernetes.io/azure-pip-name: LBalancer_IP
         service.beta.kubernetes.io/azure-load-balancer-resource-group: iep-rg
 
-cert-manager:
-  enabled: false
-
 monitoring:
   enabled: true
 

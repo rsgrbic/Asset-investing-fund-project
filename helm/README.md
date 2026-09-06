@@ -17,7 +17,8 @@ director.<domain>  ->  director  :5002
 | Helm | 3.8+ |
 | Kubernetes | 1.25+ |
 | metrics-server | only if `autoscaling.enabled` is set anywhere |
-| Subcharts | `ingress-nginx` 4.15.x, `cert-manager` v1.21.x — pulled by `helm dependency update` |
+| Subcharts | `ingress-nginx` 4.15.x — pulled by `helm dependency update` |
+| cert-manager | only if `ingress.clusterIssuer` is set. Not a subchart — install it separately |
 
 ```bash
 helm dependency update ./helm/iep
@@ -31,7 +32,7 @@ dependencies change. It writes `helm/iep/charts/` and `Chart.lock`.
 ```
 helm/
 ├── iep/
-│   ├── Chart.yaml              chart metadata + the two subchart dependencies
+│   ├── Chart.yaml              chart metadata + the ingress-nginx dependency
 │   ├── values.yaml             DEFAULTS = local (Docker Desktop)
 │   ├── values-hosted.yaml      the AKS cluster
 │   ├── scale/
@@ -174,9 +175,14 @@ read. A rule with no controller running is inert — no error, no traffic.
 Set `enabled: false` if the cluster already has a controller; it is cluster-scoped
 and two would collide over the IngressClass.
 
-### `cert-manager` (subchart)
+### cert-manager — no longer a subchart
 
-Off locally, and not out of laziness: Let's Encrypt validates a hostname by
+The chart renders the ClusterIssuer and the `cert-manager.io/cluster-issuer`
+annotation, but it does not install cert-manager. On the cluster, Application
+`iep-cert-manager` installs it at sync-wave -1. Anywhere else, install it before
+you set `ingress.clusterIssuer`.
+
+Leave `clusterIssuer` empty locally. Let's Encrypt validates a hostname by
 fetching a token from it over the public internet, and `*.iep.local` resolves
 only on your machine. There is no way to get a real certificate for a local name.
 
@@ -221,17 +227,17 @@ be finalised by a Pod that has no listener, and the write never happens. Fixing
 this means moving the listener into a worker Deployment that consumes from Redis
 — an architectural change, not a values change.
 
-**First install with cert-manager takes two passes.** cert-manager v1.21 ships
-its CRDs as ordinary templates rather than in a `crds/` directory, and Helm does
-not wait for template-rendered CRDs to become Established. So the ClusterIssuer
-can be submitted before the API server knows what one is:
+**cert-manager must be Established before `clusterIssuer` is set.** The chart
+renders a ClusterIssuer, which is a custom resource. Submit it before the CRD
+exists and the install fails:
 
 ```
 no matches for kind "ClusterIssuer" in version "cert-manager.io/v1"
 ```
 
-Install once with `--set ingress.clusterIssuer=""`, then re-run normally. Two
-commands, once per cluster.
+ArgoCD handles this with sync-wave -1, so `iep-cert-manager` reaches Healthy
+before the `iep` Application renders. For a bare `helm install`, install
+cert-manager first and wait for its webhook to answer.
 
 **All three hostnames must resolve publicly before `clusterIssuer` is set.** One
 certificate covers all three, so if one hostname is wrong, none of them get TLS.

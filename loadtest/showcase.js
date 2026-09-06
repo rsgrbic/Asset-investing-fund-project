@@ -18,6 +18,8 @@ const VOTES_PER_BATCH = 10;   // peak of iep_voting_threads_active
 const BATCH_COUNT     = 4;
 // necessary for prometheus gauges
 const THREAD_HOLD = 5;
+// Split of the drain, so both outcome labels get series.
+const APPROVE_RATE = 0.7;
 
 const GAS = '0x2dc6c0'; // 3,000,000
 const JSON_HDR = { headers: { 'Content-Type': 'application/json' } };
@@ -28,7 +30,15 @@ function bearer(token) {
 
 function rpc(method, params) {
   const res = http.post(RPC, JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), JSON_HDR);
-  return res.json('result');
+  return res.json();
+}
+
+function castVote(from, tx) {
+  const out = rpc('eth_sendTransaction', [{ from, to: tx.to, data: tx.data, gas: GAS }]);
+  if (!out.error) return;
+  // Expected once two voters agree: the contract refuses further votes.
+  if (String(out.error.message).indexOf('Voting ended') !== -1) return;
+  console.error(`vote failed from ${from}: ${JSON.stringify(out.error)}`);
 }
 
 export const options = {
@@ -37,14 +47,15 @@ export const options = {
     // Bulk of the traffic. The ramp is what gives the graph a readable shape.
     browsing: {
       executor: 'ramping-arrival-rate',
-      startRate: 5, timeUnit: '1s',
-      preAllocatedVUs: 20, maxVUs: 150,
+      startRate: 10, timeUnit: '1s',
+      preAllocatedVUs: 50, maxVUs: 400,
       exec: 'search',
       stages: [
-        { duration: '1m30s',   target: 30 },
-        { duration: '2m', target: 30 }, //keep steady
-        { duration: '1m',   target: 60 },  // push past the HPA threshold
-        { duration: '30s',  target: 0  },
+        { duration: '1m',    target: 60  },
+        { duration: '1m30s', target: 60  }, // scales to 3, the observed ceiling
+        { duration: '1m',    target: 150 },
+        { duration: '1m',    target: 150 }, // past maxReplicas, latency degrades
+        { duration: '30s',   target: 0   },
       ],
     },
     // ~90 orders. iep_pending_orders climbs while this runs.
@@ -75,27 +86,38 @@ export const options = {
 export function setup() {
   const employee = {
     forename: 'load', surname: 'test',
-    email: `synthetic-${Date.now()}@canary.local`,
+    // Not a .local domain: email_validator rejects special-use names, register
+    // returns 400, and every employee request afterwards is a 401.
+    email: `synthetic-${Date.now()}@gmail.com`,
     password: 'aA123456',
   };
-  http.post(`${AUTH}/register`, JSON.stringify(employee), JSON_HDR);
+
+  const reg = http.post(`${AUTH}/register`, JSON.stringify(employee), JSON_HDR);
+  if (reg.status !== 200) {
+    throw new Error(`register failed: ${reg.status} ${reg.body}`);
+  }
 
   const empLogin = http.post(`${AUTH}/login`, JSON.stringify(employee), JSON_HDR);
   const dirLogin = http.post(`${AUTH}/login`, JSON.stringify(DIRECTOR), JSON_HDR);
+  const empToken = empLogin.json('accessToken');
+  const dirToken = dirLogin.json('accessToken');
+  // Throwing here aborts the run. Without it a bad token still produces five
+  // minutes of 401s that look like traffic.
+  if (!empToken || !dirToken) {
+    throw new Error(`login failed: employee ${empLogin.status}, director ${dirLogin.status}`);
+  }
 
   // Ganache leaves its accounts unlocked, so the node signs and no private key
   // is handled here. accounts[0] is the contract deployer.
-  const accounts = rpc('eth_accounts', []);
+  const accounts = rpc('eth_accounts', []).result;
   const voters = accounts ? accounts.slice(1, 4) : [];
   if (voters.length < 3) {
     console.error(`no ganache accounts at ${RPC} - the draining scenario will be skipped`);
+  } else {
+    console.log(`ganache reachable, voters ${voters.join(' ')}`);
   }
 
-  return {
-    empToken: empLogin.json('accessToken'),
-    dirToken: dirLogin.json('accessToken'),
-    voters,
-  };
+  return { empToken, dirToken, voters };
 }
 
 export function search(data) {
@@ -118,37 +140,50 @@ export function directorRead(data) {
   http.get(`${DIR}/report`,         bearer(data.dirToken));
 }
 
+// draining runs on one VU, so this is claimed exactly once. Re-fetching per
+// batch let a later batch reclaim an order whose watcher had not yet deleted
+// the key, and /decision answered "Invalid uuid".
+let queue = null;
+
 export function drainBatch(data) {
   if (data.voters.length < 3) return;
 
-  const pending = http.get(`${DIR}/pending_orders`, bearer(data.dirToken));
-  const batch = pending.json('orders').map((o) => o.uuid).slice(0, VOTES_PER_BATCH);
+  if (queue === null) {
+    const pending = http.get(`${DIR}/pending_orders`, bearer(data.dirToken));
+    queue = pending.json('orders').map((o) => o.uuid);
+  }
 
-  // Open every vote first, so the watcher threads overlap.
-  const contracts = [];
-  for (const uuid of batch) {
+  // Open every vote before sending any, so the watcher threads overlap.
+  const ballots = [];
+  for (const uuid of queue.splice(0, VOTES_PER_BATCH)) {
     const dec = http.post(`${DIR}/decision`, JSON.stringify({
       uuid, voters: data.voters,
     }), bearer(data.dirToken));
 
-    if (check(dec, { 'decision 200': (r) => r.status === 200 })) {
-      contracts.push(dec.json('approve_transaction'));
-    } else {
+    if (!check(dec, { 'decision 200': (r) => r.status === 200 })) {
       console.error(`decision failed for ${uuid}: ${dec.status} ${dec.body}`);
+      continue;
     }
+
+    const approveTx = dec.json('approve_transaction');
+    const rejectTx  = dec.json('reject_transaction');
+    // Each voter decides on their own and the majority wins, which is what the
+    // contract is built for. All three vote, so a 1-1 split cannot stall.
+    ballots.push(data.voters.map((from) => ({
+      from, tx: Math.random() < APPROVE_RATE ? approveTx : rejectTx,
+    })));
   }
 
   sleep(THREAD_HOLD);
 
-  // castApprove() takes no arguments, so the calldata is the same for every
-  // voter. quorum is voters/2+1 = 2, and a third vote reverts.
-  for (const tx of contracts) {
-    for (let v = 0; v < 2; v++) {
-      rpc('eth_sendTransaction', [{
-        from: data.voters[v], to: tx.to, data: tx.data, gas: GAS,
-      }]);
+  // castApprove and castReject take no arguments, so the calldata is the same
+  // for every voter. Only the sender changes.
+  for (const votes of ballots) {
+    for (const vote of votes) {
+      castVote(vote.from, vote.tx);
     }
   }
+  console.log(`batch: ${ballots.length} orders decided`);
 }
 
 export function teardown(data) {

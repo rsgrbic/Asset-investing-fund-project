@@ -176,6 +176,9 @@ def create_app():
     redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
     redis_client = _MeteredRedis.from_url(redis_url, decode_responses=True)
     PENDING_ORDER_PREFIX = "pending_order:"
+    # An order nobody decides on is abandoned. Redis runs noeviction, so
+    # without a TTL those keys stay until the memory limit refuses writes.
+    PENDING_ORDER_TTL = 259200  # 3 days
 
 
 
@@ -346,7 +349,7 @@ def create_app():
             "info": info,
             "buying_price": buying_price,
         }
-        redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order))
+        redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order), ex=PENDING_ORDER_TTL)
         log.info(
             "order created",
             # `name` is a reserved LogRecord attribute; extra would raise KeyError.
@@ -392,7 +395,7 @@ def create_app():
             "id": asset_id,
             "selling_price": selling_price,
         }
-        redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order),ex=604800)
+        redis_client.set(f"{PENDING_ORDER_PREFIX}{order_uuid}", json.dumps(order), ex=PENDING_ORDER_TTL)
         log.info(
             "order created",
             extra={"order_uuid": order_uuid, "order_type": "SELL", "asset_id": asset_id},

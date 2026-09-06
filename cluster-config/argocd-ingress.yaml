@@ -1,0 +1,29 @@
+# ArgoCD is installed by hand, so this is a standalone Ingress rather than a
+# chart value. Applied with kubectl like the rest of cluster-config.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    # argocd-server terminates its own TLS. Without this nginx speaks HTTP to
+    # it and the server answers with a redirect, producing a redirect loop.
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd.20.215.32.142.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  name: https
+  tls:
+    - secretName: argocd-server-tls
+      hosts:
+        - argocd.20.215.32.142.sslip.io

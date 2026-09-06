@@ -84,11 +84,13 @@ VOTING_THREADS = Gauge(
     "iep_voting_threads_active",
     "Vote watcher threads alive in this process",
 )
-# A vote runs until VOTING_DEADLINE_SECONDS (3600).
+# Only finalized votes land here. A timeout leaves the loop without observing,
+# so buckets track how fast a vote closes, not the 3600s deadline. The floor is
+# 0.5 because that is the poll interval; nothing can be seen faster.
 VOTING_DURATION = Histogram(
     "iep_voting_duration_seconds",
     "Seconds from vote start to the Finalized event",
-    buckets=(1, 5, 15, 30, 60, 120, 300, 900, 3600),
+    buckets=(0.5, 1, 2, 4, 6, 8, 10, 12, 15, 20, 30, 60, 300),
 )
 VOTING_OUTCOME = Counter(
     "iep_voting_outcome_total",
