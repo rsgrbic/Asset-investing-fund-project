@@ -26,15 +26,34 @@ jobs:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: pytest tests/unit -q
 
+  # Which service directories this push touched. `changes` comes out as a JSON
+  # array of the filter names that matched, e.g. ["auth"] or [].
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth: ['auth/**']
+            employee: ['employee/**']
+            director: ['director/**']
+
   images:
-    needs: unit-tests
+    needs: [unit-tests, changes]
+    # An empty matrix is a workflow error, not a skip, so guard it here.
+    if: needs.changes.outputs.services != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
-        service: [auth, employee, director]
+        service: ${{ fromJson(needs.changes.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +80,10 @@ jobs:
 
 
   render-manifests-publish-chart:
-    needs: images
+    needs: [unit-tests, images]
+    # A skipped `needs` skips this job too, and `images` is skipped whenever no
+    # service changed. Run unless something actually failed.
+    if: ${{ !cancelled() && needs.unit-tests.result == 'success' && needs.images.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -132,15 +154,20 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
+          # Not github.sha: a service we skipped has no image at that tag. The
+          # last commit that touched the directory is the tag its image carries.
+          TAG_AUTH=$(git log -1 --format=%H -- auth)
+          TAG_EMPLOYEE=$(git log -1 --format=%H -- employee)
+          TAG_DIRECTOR=$(git log -1 --format=%H -- director)
           for scale in small medium large; do
             mkdir -p "deploy-branch/manifests/$scale"
             helm template iep ./helm/iep \
               -n iep \
               -f helm/iep/values-hosted.yaml \
               -f "helm/iep/scale/$scale.yaml" \
-              --set services.auth.image.tag=${{ github.sha }} \
-              --set services.employee.image.tag=${{ github.sha }} \
-              --set services.director.image.tag=${{ github.sha }} \
+              --set services.auth.image.tag=$TAG_AUTH \
+              --set services.employee.image.tag=$TAG_EMPLOYEE \
+              --set services.director.image.tag=$TAG_DIRECTOR \
               > "deploy-branch/manifests/$scale/iep.yaml"
           done
 
