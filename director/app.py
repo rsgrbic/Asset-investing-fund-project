@@ -408,7 +408,7 @@ def create_app():
     
     @app.get("/proba")
     def proba():
-        return jsonify({"status":"Uspesno"}),200    
+        return jsonify({"status":"Promena koda unutar kontejnera bez downtimea."}),200    
     
     @app.get("/report")
     def report():
