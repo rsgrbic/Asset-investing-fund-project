@@ -2740,7 +2740,7 @@ spec:
     spec:
       containers:
         - name: director
-          image: "ghcr.io/rsgrbic/iep-director:4bdec3fa7da9348a9d90f84de9c70c7075535bf3"
+          image: "ghcr.io/rsgrbic/iep-director:7eac46092519978877503d2fc4b386fb58c36ae5"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
