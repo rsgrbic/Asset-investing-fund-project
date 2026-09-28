@@ -1,40 +1,90 @@
-# IEP Moj — Investment Fund Portfolio Manager
+# IEP — Investment Fund Portfolio Manager
 
-A learning project that orcherstrates three Flask microservices into a complete investment workflow: registration, order management, director approval (with  blockchain voting), asset search, and data collection reports.
+Three Flask microservices that run an investment-fund order flow end to end:
+employees register assets to buy or sell, a director approves or rejects them
+through an on-chain vote, and a portfolio report tracks the result.
 
-## Skills demonstrated
-
-| Area | Technniques used|
-|---|---|
-| **Python/Flask** | Three modular Flask services, app factory pattern, gunicorn |
-| **Databases** | MySQL (SQLAlchemy), MongoDB (PyMongo), Redis (order queue) |
-| **Auth** | JWT (Flask-JWT-Extended), PBKDF2 password hashing, role-based guards |
-| **Blockchain** | Solidity voting contract, Web3.py, Ganache local testnet |
-| **Infra** | Docker Compose, Kubernetes with kubeAdm, multi-replica deployments |
-
-## Architecture
+## How it works
 
 ```
-auth:5000 ──> MySQL     (user registration, JWT login)
-employee:5001 ──> MongoDB, Redis   (asset search, buy/sell orders)
-director:5002 ──> MongoDB, Redis, Ganache  (pending orders, approval, report)
+register / login ──▶  auth      :5000   users + JWT (MySQL / SQLite)
+orders / search  ──▶  employee  :5001   buy/sell orders, asset search (MongoDB, Redis)
+decision / report ─▶  director  :5002   approvals, portfolio report (MongoDB, Redis, Ganache)
 ```
 
-Orders flow through Redis: employee creates → director approves (→ optional chain: Solidity voting contract) → finalized in MongoDB.
+The flow is: register → log in → create a buy or sell order → the director
+decides on it via a blockchain vote → the report reflects the new portfolio
+state.
 
-## Complex endpoints
+- **auth** issues JWTs with a `role` claim. Employees register themselves; the
+  director account is seeded at startup.
+- **employee** puts new orders into Redis for the director to pick up, and
+  searches finalized assets in MongoDB by name, category, date, or nested
+  fields (`info.*`).
+- **director** lists pending orders, deploys a small voting contract per
+  decision, and writes the outcome to MongoDB — a buy becomes a new asset, a
+  sell stamps the asset as sold, a rejection changes nothing. The report groups
+  assets by category into money spent vs. earned.
 
-**`POST /employee/search`** — Dynamic MongoDB query builder supporting 15 operators (`eq`, `ne`, `gt`, `regex`, `contains`, `exists`, `size`, `all`, `in`, `nin` …), nested field dot-notation (`info.geo.country`), and combined date/category/name filters. All built from a single JSON body.
+## Repo layout
 
-**`POST /director/decision`** — Dual-path approval endpoint. In blockchain mode, it deploys a Solidity Voting contract to Ganache, returns two pre-built unsigned Ethereum transactions (approve/reject), and spawns a background daemon thread that listens for the `Finalized` event before committing to MongoDB. In simple mode, it accepts `{"uuid": …, "approved": bool}` and processes synchronously. Touches Redis, MongoDB, and Ethereum in a single request.
+```
+auth/  employee/  director/   the three services, each with its own Dockerfile
+helm/iep/                     Helm chart: services, infra (MySQL, MongoDB,
+                              Redis, Ganache), ingress, autoscaling, dashboards
+tools/dashboards/             Go program that generates the Grafana dashboards
+argocd/                       ArgoCD app-of-apps + cluster add-ons
+tests/unit/                   unit tests (pytest)
+loadtest/                     k6 load scenario
+```
 
-**`GET /director/report`** — MongoDB aggregation that groups assets by category, sums `buying_price` (spent) and `selling_price` (earned), and returns sorted statistics.
+## Run it locally
 
-## Quick start
-Contains persistent storage, services that expose to localhost, secrets and config files.
-To change ENV Vars, configure 10-configmap.yaml and 11-secret.yaml
+Prerequisites: Docker, a local cluster (Docker Desktop or kind), Helm 3.8+.
 
 ```bash
-docker build -f ./<service>/dockerfile -t iep-<service>:latest . # Repeat for all services
-kubectl apply -f ./kubernetes/ #starts one pod each of auth and director, and 3 replicas of a employee app. pulls fixed images of mySql, mongoDB and ganache
+docker build -t iep-auth:latest ./auth
+docker build -t iep-employee:latest ./employee
+docker build -t iep-director:latest ./director
+helm dependency update ./helm/iep
 ```
+
+Point the hostnames at your cluster (hosts file):
+
+```
+127.0.0.1 auth.iep.local employee.iep.local director.iep.local ganache.iep.local
+```
+
+```bash
+helm upgrade --install iep ./helm/iep -n iep --create-namespace -f secrets.local.yaml
+```
+
+Configuration has two axes, each passed with `-f` (later wins): environment
+(`values.yaml` for local, `values-hosted.yaml` for the AKS cluster) and size
+(`scale/small|medium|large.yaml`). See [`helm/README.md`](helm/README.md) for
+the full reference. One note: `director` always runs as a single replica,
+because its vote listener lives inside that one pod.
+
+
+## How it ships
+
+Pushes to `main` run CI: unit tests, Docker builds of only the services that
+changed (published to GHCR), then a validation of every environment × size
+combination. The rendered manifests go on branch `deploy` , and ArgoCD syncs to that.
+ Secrets come from Azure Key Vault via External Secrets on the hosted
+cluster. Logs are pushed to Loki.
+
+## Monitoring
+
+Each service exports its
+own metrics, Prometheus scrapes them, and the Grafana dashboards load themselves
+from a ConfigMap.
+
+Two custom dashboards are **generated** — a small Go
+program in `tools/dashboards/` builds them with Grafana foundation SDK. Change a panel, re-run the generator,
+commit the output. There is a community Redis dashboard, kept for comparison.
+
+The chart also defines its own alerts, aimed at the failures this system can
+actually have: a vote that never reaches a decision, an order queue that stops
+draining, orders lost to a Redis restart, Redis nearing its memory cap, and the
+usual disk, OOM, and ArgoCD-drift set.
